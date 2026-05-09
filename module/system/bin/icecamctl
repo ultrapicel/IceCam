@@ -1,0 +1,15 @@
+#!/system/bin/sh
+case "$1" in
+  logs)
+    mkdir -p /sdcard/Download
+    tar -czf /sdcard/Download/icecam_logs.tar.gz /data/adb/icecam/logs 2>/dev/null
+    echo /sdcard/Download/icecam_logs.tar.gz
+    ;;
+  status)
+    echo "IceCam dev module installed"
+    ls -la /data/adb/icecam/logs 2>/dev/null
+    ;;
+  *)
+    echo "Usage: icecamctl {logs|status}"
+    ;;
+esac

@@ -1,0 +1,44 @@
+name: Build IceCam v1
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Build root module ZIP
+        run: |
+          cd module
+          zip -r ../IceCam-root-module-v0.1.0-dev.zip .
+          cd ..
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/debug/app-debug.apk out/IceCam-app-v0.1.0-dev.apk
+          cp IceCam-root-module-v0.1.0-dev.zip out/
+          zip -r out/IceCam-source-snapshot.zip . -x '.git/*' 'out/*'
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: IceCam-v1-dev
+          path: out/*
