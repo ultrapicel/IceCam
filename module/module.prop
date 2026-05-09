@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam v7.6 Hook Layer
-version=7.6-dev-guide-ui
-versionCode=8
+name=IceCam v8.0 Profile Clone Layer
+version=8.0-profile-clone
+versionCode=9
 author=IceCam
-summary=IceCam root control layer and LSPosed telemetry baseline
+summary=IceCam root control layer, LSPosed telemetry, and passive CameraCharacteristics profile cache

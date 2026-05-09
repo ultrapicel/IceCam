@@ -1,6 +1,10 @@
 package com.icecam.dev.hook;
 
 import android.util.Log;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.params.StreamConfigurationMap;
+import android.util.Range;
+import android.util.Size;
 import java.io.*;
 import java.lang.reflect.Member;
 import java.text.SimpleDateFormat;
@@ -17,6 +21,9 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static final String CONFIG = "/data/adb/icecam/config/app_config.json";
     private static final String ACTIVE = "/data/adb/icecam/state/active";
     private static final String MEDIA = "/data/adb/icecam/media/source";
+    private static final String CACHE_DIR = "/data/adb/icecam/cache";
+    private static final String PROFILE_CACHE = CACHE_DIR + "/camera_profiles.json";
+    private static final String PROFILE_EVENTS = CACHE_DIR + "/camera_profiles.jsonl";
 
     @Override
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lp) throws Throwable {
@@ -66,9 +73,11 @@ public class IceCamHook implements IXposedHookLoadPackage {
             }
             @Override protected void afterHookedMethod(MethodHookParam p) {
                 Object id = arg(p, 0, "?");
+                Object result = p.getResult();
                 log("[Camera2] getCameraCharacteristics after id=" + id
-                        + " result=" + className(p.getResult())
+                        + " result=" + className(result)
                         + " active=" + active());
+                cacheCameraProfile(lp, String.valueOf(id), result);
             }
         });
 
@@ -139,6 +148,113 @@ public class IceCamHook implements IXposedHookLoadPackage {
                         + " active=" + active());
             }
         });
+    }
+
+    private static void cacheCameraProfile(XC_LoadPackage.LoadPackageParam lp, String id, Object obj) {
+        try {
+            if (!(obj instanceof CameraCharacteristics)) {
+                log("[ProfileCache] skip id=" + id + " result=" + className(obj));
+                return;
+            }
+            CameraCharacteristics cc = (CameraCharacteristics) obj;
+            String json = profileJson(lp, id, cc);
+            appendFile(PROFILE_EVENTS, json + "\n");
+            writeFile(PROFILE_CACHE, json + "\n");
+            log("[ProfileCache] saved id=" + id
+                    + " facing=" + val(cc, CameraCharacteristics.LENS_FACING)
+                    + " orientation=" + val(cc, CameraCharacteristics.SENSOR_ORIENTATION)
+                    + " hw=" + val(cc, CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)
+                    + " fps=" + safe(val(cc, CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)));
+        } catch (Throwable t) {
+            log("[ERR] ProfileCache " + stack(t));
+            xlog(t);
+        }
+    }
+
+    private static String profileJson(XC_LoadPackage.LoadPackageParam lp, String id, CameraCharacteristics cc) {
+        StringBuilder sb = new StringBuilder();
+        sb.append('{');
+        field(sb, "version", "8.0-profile-clone", true);
+        field(sb, "ts", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()), false);
+        field(sb, "package", lp.packageName, false);
+        field(sb, "process", lp.processName, false);
+        field(sb, "cameraId", id, false);
+        field(sb, "role", role(cc), false);
+        fieldRaw(sb, "facing", String.valueOf(val(cc, CameraCharacteristics.LENS_FACING)), false);
+        fieldRaw(sb, "sensorOrientation", String.valueOf(val(cc, CameraCharacteristics.SENSOR_ORIENTATION)), false);
+        fieldRaw(sb, "hardwareLevel", String.valueOf(val(cc, CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)), false);
+        field(sb, "focalLengths", safe(val(cc, CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)), false);
+        field(sb, "fpsRanges", safe(val(cc, CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)), false);
+        try {
+            StreamConfigurationMap map = cc.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+            field(sb, "jpegSizes", sizes(map == null ? null : map.getOutputSizes(android.graphics.ImageFormat.JPEG), 32), false);
+            field(sb, "surfaceTextureSizes", sizes(map == null ? null : map.getOutputSizes(android.graphics.SurfaceTexture.class), 32), false);
+            field(sb, "mediaRecorderSizes", sizes(map == null ? null : map.getOutputSizes(android.media.MediaRecorder.class), 32), false);
+        } catch (Throwable t) {
+            field(sb, "streamConfigError", shortErr(t), false);
+        }
+        field(sb, "compatibilityMode", compatibilityMode(), false);
+        sb.append("}");
+        return sb.toString();
+    }
+
+    private static String role(CameraCharacteristics cc) {
+        try {
+            Integer f = cc.get(CameraCharacteristics.LENS_FACING);
+            if (f == null) return "unknown";
+            if (f == CameraCharacteristics.LENS_FACING_BACK) return "back";
+            if (f == CameraCharacteristics.LENS_FACING_FRONT) return "front";
+            if (BuildCompat.EXTERNAL_FACING == f) return "external";
+        } catch (Throwable ignored) {}
+        return "other";
+    }
+
+    private static class BuildCompat { static final int EXTERNAL_FACING = 2; }
+
+    private static <T> T val(CameraCharacteristics cc, CameraCharacteristics.Key<T> key) {
+        try { return cc.get(key); } catch (Throwable ignored) { return null; }
+    }
+
+    private static String sizes(Size[] ss, int max) {
+        if (ss == null) return "[]";
+        StringBuilder sb = new StringBuilder("[");
+        int n = Math.min(ss.length, max);
+        for (int i=0;i<n;i++) { if (i>0) sb.append(','); sb.append(ss[i].getWidth()).append('x').append(ss[i].getHeight()); }
+        if (ss.length > max) sb.append(",...").append(ss.length).append(" total");
+        return sb.append(']').toString();
+    }
+
+    private static void field(StringBuilder sb, String k, String v, boolean first) {
+        if (!first) sb.append(',');
+        sb.append('\"').append(esc(k)).append('\"').append(':').append('\"').append(esc(v)).append('\"');
+    }
+    private static void fieldRaw(StringBuilder sb, String k, String v, boolean first) {
+        if (!first) sb.append(',');
+        sb.append('\"').append(esc(k)).append('\"').append(':').append(v == null || "null".equals(v) ? "null" : v);
+    }
+    private static String esc(String s) { return s == null ? "" : s.replace("\\","\\\\").replace("\"","\\\"").replace("\n"," ").replace("\r"," "); }
+
+    private static String compatibilityMode() {
+        String c = readSmall(CONFIG);
+        int i = c.indexOf("\"compatibilityMode\"");
+        if (i < 0) return "strict-real";
+        int colon = c.indexOf(':', i);
+        int q = c.indexOf('\"', colon + 1);
+        int e = c.indexOf('\"', q + 1);
+        return (q >= 0 && e > q) ? c.substring(q + 1, e) : "strict-real";
+    }
+
+    private static void writeFile(String path, String data) {
+        try {
+            File f = new File(path); File d = f.getParentFile(); if (d != null && !d.exists()) d.mkdirs();
+            FileOutputStream out = new FileOutputStream(f, false); out.write(data.getBytes("UTF-8")); out.close();
+        } catch (Throwable t) { log("[WARN] writeFile " + path + " " + shortErr(t)); }
+    }
+    private static void appendFile(String path, String data) {
+        try {
+            File f = new File(path); File d = f.getParentFile(); if (d != null && !d.exists()) d.mkdirs();
+            FileOutputStream out = new FileOutputStream(f, true); out.write(data.getBytes("UTF-8")); out.close();
+        } catch (Throwable t) { log("[WARN] appendFile " + path + " " + shortErr(t)); }
     }
 
     private static Class<?> findClassBoot(String name) {

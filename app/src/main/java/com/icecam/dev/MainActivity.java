@@ -20,10 +20,10 @@ import java.util.*;
 public class MainActivity extends Activity {
     private static final int REQ_PHOTO = 701;
     private static final int REQ_VIDEO = 702;
-    private static final String APP_VERSION = "v7.6-dev-flow-perms-ui";
+    private static final String APP_VERSION = "v8.0-profile-clone";
     private final String ctl = "/data/adb/icecam/bin/icecamctl";
     private final String ice = "/data/adb/icecam";
-    private String tab = "Dashboard", mode = "log-only", cameraMode = "auto", mediaType = "none";
+    private String tab = "Dashboard", mode = "log-only", cameraMode = "auto", compatibilityMode = "strict-real", mediaType = "none";
     private boolean replacementActive = false, loop = true, mirror = false;
     private int diagStep = 1;
     private int rotation = 0;
@@ -103,7 +103,7 @@ public class MainActivity extends Activity {
     private void renderUi() {
         root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackground(appBg());
         status = tv("IceCam " + APP_VERSION, 20, 1); status.setPadding(dp(14),dp(12),dp(14),dp(6)); root.addView(status);
-        TextView hint = muted("Development build · log-only hook telemetry"); hint.setPadding(dp(14),0,dp(14),dp(6)); root.addView(hint);
+        TextView hint = muted("Development build · profile clone/cache · no frame injection yet"); hint.setPadding(dp(14),0,dp(14),dp(6)); root.addView(hint);
 
         HorizontalScrollView hsv = new HorizontalScrollView(this); hsv.setHorizontalScrollBarEnabled(false); tabBar = new LinearLayout(this); tabBar.setOrientation(LinearLayout.HORIZONTAL); tabBar.setPadding(dp(8),dp(4),dp(8),dp(6)); hsv.addView(tabBar); root.addView(hsv);
         for (String t: new String[]{"Dashboard","Root","Media","Hooks","Logs","Diagnostics"}) { final String ft=t; TextView b=chip(t, tab.equals(t)); b.setOnClickListener(v->{tab=ft; renderUi();}); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(t.equals("Diagnostics")?112:92),dp(44)); lp.setMargins(dp(3),0,dp(3),0); tabBar.addView(b, lp); }
@@ -131,7 +131,7 @@ public class MainActivity extends Activity {
 
         LinearLayout n=card(); section(n,"Expected v7 hook markers", null);
         n.addView(muted("Required markers: [LOAD] → [HOOKED] → getCameraIdList → getCameraCharacteristics → openCamera"));
-        n.addView(muted("Known dev note: v7.6 also fixes /data/adb/icecam permissions so hook can read active/config and append hook.log."));
+        n.addView(muted("v8 required marker: [ProfileCache] saved id=... and /data/adb/icecam/cache/camera_profiles.json"));
     }
     private void rootTab(){
         LinearLayout c=card(); section(c,"Root / module paths", "No automatic su on app start."); c.addView(muted("control path: "+ctl)); c.addView(muted("module path: "+ice));
@@ -150,19 +150,24 @@ public class MainActivity extends Activity {
         frame.addView(imagePreview, new FrameLayout.LayoutParams(-1,-1, Gravity.CENTER)); frame.addView(videoPreview, new FrameLayout.LayoutParams(-1,-1, Gravity.CENTER)); updatePreview();
     }
     private void hooksTab(){
-        LinearLayout c=card(); section(c,"Hook configuration", "v7 is telemetry-only. Camera frames are not replaced yet."); pillRow(c,"Mode",mode); pillRow(c,"Target",cameraMode);
+        LinearLayout c=card(); section(c,"Hook configuration", "v8 caches and clones real CameraCharacteristics. Camera frames are not replaced yet."); pillRow(c,"Mode",mode); pillRow(c,"Target",cameraMode); pillRow(c,"Compatibility",compatibilityMode);
         LinearLayout a=card(); section(a,"Mode", null); addBtn(a,"log-only", mode.equals("log-only"),v->{mode="log-only";writeAppConfigViaRoot();renderUi();}); addBtn(a,"block-open-test", mode.equals("block-open-test"),v->{mode="block-open-test";writeAppConfigViaRoot();renderUi();}); addBtn(a,"virtual-stub", mode.equals("virtual-stub"),v->{mode="virtual-stub";writeAppConfigViaRoot();renderUi();});
         LinearLayout t=card(); section(t,"Target camera", null); addBtn(t,"auto", cameraMode.equals("auto"),v->{cameraMode="auto";writeAppConfigViaRoot();renderUi();}); addBtn(t,"back", cameraMode.equals("back"),v->{cameraMode="back";writeAppConfigViaRoot();renderUi();}); addBtn(t,"front", cameraMode.equals("front"),v->{cameraMode="front";writeAppConfigViaRoot();renderUi();});
+        LinearLayout m=card(); section(m,"Compatibility profile mode", "strict-real is default; compatibility/experimental are passive flags in v8.");
+        addBtn(m,"strict-real", compatibilityMode.equals("strict-real"),v->{compatibilityMode="strict-real";writeAppConfigViaRoot();renderUi();});
+        addBtn(m,"compatibility", compatibilityMode.equals("compatibility"),v->{compatibilityMode="compatibility";writeAppConfigViaRoot();renderUi();});
+        addBtn(m,"experimental", compatibilityMode.equals("experimental"),v->{compatibilityMode="experimental";writeAppConfigViaRoot();renderUi();});
     }
     private void logsTab(){
         LinearLayout a=card(); section(a,"Logs", "Read-only views. Export is only Step 6 on Dashboard.");
         addBtn(a,"Show Hook Log",true,v->runRoot("cat /data/adb/icecam/logs/hook.log 2>/dev/null || true"));
         addBtn(a,"Show Module Log",false,v->runRoot("cat /data/adb/icecam/logs/module.log 2>/dev/null || true"));
-        addBtn(a,"Show Filtered Logcat",false,v->runRoot("logcat -d -v threadtime | grep -E 'IceCam|LSPosed|Xposed|CameraManager|Camera2|CameraService|CameraProvider' | tail -n 260"));
+        addBtn(a,"Show Filtered Logcat",false,v->runRoot("logcat -d -v threadtime | grep -E 'IceCam|LSPosed|Xposed|CameraManager|Camera2|CameraService|CameraProvider|ProfileCache' | tail -n 320"));
+        addBtn(a,"Show Profile Cache",false,v->runRoot("cat /data/adb/icecam/cache/camera_profiles.json 2>/dev/null || echo no-profile-cache-yet"));
     }
     private void diagTab(){
         LinearLayout c=card(); section(c,"Device", null); c.addView(muted("package: "+getPackageName())); c.addView(muted("device: "+Build.MANUFACTURER+" "+Build.MODEL+" / "+Build.DEVICE)); c.addView(muted("sdk: "+Build.VERSION.SDK_INT)); c.addView(muted("abi: "+Arrays.toString(Build.SUPPORTED_ABIS)));
-        LinearLayout a=card(); section(a,"Camera diagnostics", null); addBtn(a,"Dump CameraManager",true,v->dumpCameras());
+        LinearLayout a=card(); section(a,"Camera diagnostics", null); addBtn(a,"Dump CameraManager",true,v->dumpCameras()); addBtn(a,"Read Profile Cache",false,v->runRoot("cat /data/adb/icecam/cache/camera_profiles.json 2>/dev/null || true"));
     }
 
     private void selectPhoto(){ Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT); i.addCategory(Intent.CATEGORY_OPENABLE); i.setType("image/*"); startActivityForResult(i, REQ_PHOTO); }
@@ -183,6 +188,7 @@ public class MainActivity extends Activity {
             "  \"active\": "+replacementActive+",\n"+
             "  \"mode\": \""+mode+"\",\n"+
             "  \"cameraMode\": \""+cameraMode+"\",\n"+
+            "  \"compatibilityMode\": \""+compatibilityMode+"\",\n"+
             "  \"mediaType\": \""+mediaType+"\",\n"+
             "  \"mediaUri\": \""+uri+"\",\n"+
             "  \"mediaPath\": \"/data/adb/icecam/media/source\",\n"+
