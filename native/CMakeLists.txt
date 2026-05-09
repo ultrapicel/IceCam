@@ -1,5 +1,0 @@
-cmake_minimum_required(VERSION 3.22.1)
-project(icecam_native)
-add_library(icecam_native_hook SHARED camera_hook/icecam_native_hook.cpp)
-find_library(log-lib log)
-target_link_libraries(icecam_native_hook ${log-lib})

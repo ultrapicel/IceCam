@@ -1,0 +1,28 @@
+#!/system/bin/sh
+BASE=/data/adb/icecam
+LOG=$BASE/logs/module.log
+mkdir -p $BASE/logs $BASE/state $BASE/config
+case "$1" in
+ status)
+  echo "IceCam status"
+  echo "prepared=$(cat $BASE/state/prepared 2>/dev/null || echo 0)"
+  echo "hooks_prepared=$(cat $BASE/state/hooks_prepared 2>/dev/null || echo 0)"
+  echo "sdk=$(getprop ro.build.version.sdk)"
+  echo "device=$(getprop ro.product.device)"
+  echo "abi=$(getprop ro.product.cpu.abi)"
+ ;;
+ prepare|prepare-hooks)
+  date '+%F %T prepare-hooks requested' >> $LOG
+  echo 1 > $BASE/state/prepared
+  echo 1 > $BASE/state/hooks_prepared
+  cat > $BASE/config/hook_config.json <<JSON
+{"enabled":true,"mode":"log-only","camera2":true,"camera1":true,"camerax":true,"ndk":false,"target":"all"}
+JSON
+  echo "IceCam hooks prepared: log-only mode"
+ ;;
+ logs)
+  tar -czf /sdcard/Download/icecam_logs.tar.gz $BASE/logs $BASE/state $BASE/config 2>/dev/null
+  echo /sdcard/Download/icecam_logs.tar.gz
+ ;;
+ *) echo "icecamctl status|prepare-hooks|logs";;
+esac

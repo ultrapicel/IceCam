@@ -1,25 +1,28 @@
-# IceCam v2 Dev
+# IceCam v3 dev
 
-IceCam is an Android root-assisted system camera replacement research project.
+Dev build with first LSPosed hook-layer skeleton.
 
-## Build
+Install instructions for v3:
 
-Upload this repository to GitHub and run:
+- APK: update
+- Root module: reinstall
+- Reboot: required
+- LSPosed: enable IceCam module and select target apps, then force-stop target app
 
-`Actions -> Build IceCam v2`
+v3 hook mode is **log-only**. It does not yet replace frames. It logs Camera2 calls:
 
-Artifacts:
+- CameraManager.getCameraIdList
+- CameraManager.getCameraCharacteristics
+- CameraManager.openCamera
 
-- `IceCam-app-v0.2.0-dev.apk`
-- `IceCam-root-module-v0.2.0-dev.zip`
-- `IceCam-source-snapshot-v0.2.0-dev.zip`
+Logs:
 
-## Install update rules for v2
+```sh
+su -c icecamctl logs
+```
 
-- APK: update required.
-- Root module: reinstall required.
-- Reboot: required.
+Expected bundle:
 
-## Dev warning
-
-v2 is not final camera replacement. It is the base for media source handling, diagnostics, root module state, and hook preparation.
+```text
+/sdcard/Download/icecam_logs.tar.gz
+```
