@@ -1,5 +1,5 @@
 #!/system/bin/sh
-ui_print "Installing IceCam v0.3.1-dev"
+ui_print "Installing IceCam v0.3.1.3-dev"
 set_perm_recursive $MODPATH 0 0 0755 0644
 set_perm $MODPATH/bin/icecamctl 0 0 0755
 set_perm $MODPATH/post-fs-data.sh 0 0 0755

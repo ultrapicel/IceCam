@@ -1,4 +1,4 @@
-name: Build IceCam v3.1.1
+name: Build IceCam v3.1.3
 on: [push, workflow_dispatch]
 jobs:
   build:
@@ -25,6 +25,15 @@ jobs:
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Project dir: $PROJECT_DIR"
           ls -la "$PROJECT_DIR"
+      - name: Validate no remote Xposed dependency
+        run: |
+          set -e
+          cd "$PROJECT_DIR"
+          if grep -R "de.robv.android.xposed:api" -n .; then
+            echo "Forbidden remote Xposed dependency found"
+            exit 1
+          fi
+          test -f app/libs/xposed-api-stub.jar
       - name: Build APK
         run: |
           set -e
@@ -36,11 +45,11 @@ jobs:
           cd "$PROJECT_DIR"
           mkdir -p out
           cd module
-          zip -r ../out/IceCam-root-module-v0.3.1-dev.zip .
+          zip -r ../out/IceCam-root-module-v0.3.1.3-dev.zip .
           cd ..
-          cp app/build/outputs/apk/debug/app-debug.apk out/IceCam-app-v0.3.1-dev.apk
+          cp app/build/outputs/apk/debug/app-debug.apk out/IceCam-app-v0.3.1.3-dev.apk
           zip -r out/IceCam-source-snapshot.zip . -x './.git/*' './out/*'
       - uses: actions/upload-artifact@v4
         with:
-          name: IceCam-v3.1.1-dev
+          name: IceCam-v3.1.3-dev
           path: ${{ env.PROJECT_DIR }}/out/*
