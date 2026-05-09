@@ -61,7 +61,7 @@ public class MainActivity extends Activity {
 
     private void renderUi() {
         root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackground(appBg());
-        status = tv("IceCam v7.1 · glass UI", 20, 1); status.setPadding(dp(14),dp(12),dp(14),dp(8)); root.addView(status);
+        status = tv("IceCam v7.4 · hook trace", 20, 1); status.setPadding(dp(14),dp(12),dp(14),dp(8)); root.addView(status);
         HorizontalScrollView hsv = new HorizontalScrollView(this); hsv.setHorizontalScrollBarEnabled(false); tabBar = new LinearLayout(this); tabBar.setOrientation(LinearLayout.HORIZONTAL); tabBar.setPadding(dp(8),dp(4),dp(8),dp(6)); hsv.addView(tabBar); root.addView(hsv);
         for (String t: new String[]{"Dashboard","Root","Media","Hooks","Logs","Diagnostics"}) { TextView b=chip(t, tab.equals(t)); b.setOnClickListener(v->{tab=t; renderUi();}); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(t.equals("Diagnostics")?112:92),dp(44)); lp.setMargins(dp(3),0,dp(3),0); tabBar.addView(b, lp); }
         ScrollView sv = new ScrollView(this); content = new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL); content.setPadding(dp(6),0,dp(6),dp(6)); sv.addView(content); root.addView(sv, new LinearLayout.LayoutParams(-1,0,1));

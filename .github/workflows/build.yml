@@ -1,4 +1,4 @@
-name: Build IceCam v7
+name: Build IceCam v7.4
 on:
   workflow_dispatch:
   push:
@@ -30,18 +30,18 @@ jobs:
       - name: Build root module zip
         run: |
           cd module
-          zip -r ../IceCam-root-module-v7.zip .
+          zip -r ../IceCam-root-module-v7.4.zip .
       - name: Build source snapshot
         run: |
-          zip -r IceCam-source-snapshot-v7.zip . -x "*.git*" -x "app/build/*" -x "gradle-8.7/*" -x "gradle.zip"
+          zip -r IceCam-source-snapshot-v7.4.zip . -x "*.git*" -x "app/build/*" -x "gradle-8.7/*" -x "gradle.zip"
       - name: Collect artifacts
         run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/IceCam-app-v7.apk
-          cp IceCam-root-module-v7.zip artifacts/
-          cp IceCam-source-snapshot-v7.zip artifacts/
-          printf "IceCam v7 build\ncommit=%s\ndate=%s\n" "$GITHUB_SHA" "$(date -u)" > artifacts/build-info.txt
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/IceCam-app-v7.4.apk
+          cp IceCam-root-module-v7.4.zip artifacts/
+          cp IceCam-source-snapshot-v7.4.zip artifacts/
+          printf "IceCam v7.4 build\ncommit=%s\ndate=%s\n" "$GITHUB_SHA" "$(date -u)" > artifacts/build-info.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: IceCam-v7-from-scratch
+          name: IceCam-v7.4-hooklog-camera-trace
           path: artifacts/*

@@ -4,7 +4,7 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
-    <application android:theme="@style/AppTheme" android:label="IceCam v7" android:allowBackup="false" android:usesCleartextTraffic="true">
+    <application android:theme="@style/AppTheme" android:label="IceCam v7.4" android:allowBackup="false" android:usesCleartextTraffic="true">
         <meta-data android:name="xposedmodule" android:value="true" />
         <meta-data android:name="xposeddescription" android:value="IceCam camera hook layer" />
         <meta-data android:name="xposedminversion" android:value="93" />
