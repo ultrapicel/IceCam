@@ -1,6 +1,6 @@
-# IceCam v7.4 diagnostic bundle build
+# IceCam v7.5 diagnostic bundle build
 
-v7.4 keeps the v7.2 LSPosed hookAllMethods fix and improves Export Debug Bundle.
+v7.5 keeps the v7.2 LSPosed hookAllMethods fix and improves Export Debug Bundle.
 
 ## Main purpose
 
@@ -19,7 +19,7 @@ This build is still log-only. It is designed to prove stable LSPosed loading and
 
 Output path:
 
-`/sdcard/Download/icecam_debug_v7.4_<timestamp>.tar.gz`
+`/sdcard/Download/icecam_debug_v7.5_<timestamp>.tar.gz`
 
 ## Install matrix
 

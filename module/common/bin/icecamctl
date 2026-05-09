@@ -5,7 +5,7 @@ CONFIG="$ICE/config"
 STATE="$ICE/state"
 MEDIA="$ICE/media"
 BIN="$ICE/bin"
-VERSION="v7.4"
+VERSION="v7.5"
 APP_PKG="com.icecam.dev"
 TARGETS="com.android.camera com.android.chrome org.telegram.messenger org.telegram.messenger.web"
 
@@ -19,7 +19,7 @@ init_dirs() {
   chmod 666 "$STATE/active" "$STATE/prepared" 2>/dev/null
   [ -f "$CONFIG/app_config.json" ] || cat > "$CONFIG/app_config.json" <<JSON
 {
-  "version":"7.4-hooklog-camera-trace",
+  "version":"7.5-dev-guide-ui",
   "active":false,
   "mode":"log-only",
   "cameraMode":"auto",

@@ -1,19 +1,14 @@
-
 package com.icecam.dev;
 
 import android.Manifest;
 import android.app.Activity;
-import android.content.ContentResolver;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
-import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.provider.Settings;
 import android.text.method.ScrollingMovementMethod;
 import android.view.Gravity;
 import android.view.View;
@@ -25,6 +20,7 @@ import java.util.*;
 public class MainActivity extends Activity {
     private static final int REQ_PHOTO = 701;
     private static final int REQ_VIDEO = 702;
+    private static final String APP_VERSION = "v7.5-dev-guide-ui";
     private final String ctl = "/data/adb/icecam/bin/icecamctl";
     private final String ice = "/data/adb/icecam";
     private String tab = "Dashboard", mode = "log-only", cameraMode = "auto", mediaType = "none";
@@ -49,61 +45,140 @@ public class MainActivity extends Activity {
     }
 
     private int dp(float v){ return (int)(v*getResources().getDisplayMetrics().density+0.5f); }
-    private android.graphics.drawable.GradientDrawable bg(int color, float radius){ android.graphics.drawable.GradientDrawable g=new android.graphics.drawable.GradientDrawable(); g.setColor(color); g.setCornerRadius(dp(radius)); g.setStroke(dp(1), Color.argb(42,255,255,255)); return g; }
-    private android.graphics.drawable.GradientDrawable appBg(){ android.graphics.drawable.GradientDrawable g=new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, new int[]{Color.rgb(5,10,18), Color.rgb(10,27,42), Color.rgb(3,7,13)}); return g; }
-    private TextView tv(String s, int sp, int style) { TextView v=new TextView(this); v.setText(s); v.setTextSize(sp); v.setTextColor(Color.rgb(232,238,247)); v.setTypeface(null, style); v.setPadding(dp(10),dp(5),dp(10),dp(5)); return v; }
-    private TextView chip(String s, boolean selected){ TextView v=tv(s,12,selected?1:0); v.setGravity(Gravity.CENTER); v.setSingleLine(false); v.setTextColor(selected?Color.WHITE:Color.rgb(198,213,232)); v.setBackground(bg(selected?Color.argb(120,70,130,210):Color.argb(44,255,255,255), 18)); v.setPadding(dp(14),dp(8),dp(14),dp(8)); return v; }
-    private Button btn(String s) { Button b=new Button(this); b.setText(s); b.setAllCaps(false); b.setTextSize(14); b.setTextColor(Color.WHITE); b.setMinHeight(dp(46)); b.setPadding(dp(12),0,dp(12),0); b.setBackground(bg(Color.argb(72,255,255,255), 18)); return b; }
-    private LinearLayout card(){ LinearLayout c=new LinearLayout(this); c.setOrientation(LinearLayout.VERTICAL); c.setPadding(dp(12),dp(12),dp(12),dp(12)); c.setBackground(bg(Color.argb(54,255,255,255), 24)); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.setMargins(dp(10),dp(8),dp(10),dp(8)); content.addView(c,lp); return c; }
-    private void addBtn(LinearLayout l, String s, View.OnClickListener c){ Button b=btn(s); b.setOnClickListener(c); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(50)); lp.setMargins(0,dp(5),0,dp(5)); l.addView(b, lp); }
-    private void line(String s){ content.addView(tv(s,14,0)); }
+
+    private android.graphics.drawable.GradientDrawable round(int color, float radius){
+        android.graphics.drawable.GradientDrawable g=new android.graphics.drawable.GradientDrawable();
+        g.setColor(color); g.setCornerRadius(dp(radius));
+        g.setStroke(dp(1), Color.argb(48,255,255,255));
+        return g;
+    }
+    private android.graphics.drawable.Drawable glass(int color, float radius){
+        android.graphics.drawable.GradientDrawable base=new android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.argb(128,255,255,255), color, Color.argb(32,255,255,255)});
+        base.setCornerRadius(dp(radius));
+        base.setStroke(dp(1), Color.argb(56,255,255,255));
+        return base;
+    }
+    private android.graphics.drawable.GradientDrawable appBg(){
+        return new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.rgb(4,8,16), Color.rgb(11,28,44), Color.rgb(7,13,22), Color.rgb(2,5,10)});
+    }
+    private TextView tv(String s, int sp, int style) {
+        TextView v=new TextView(this); v.setText(s); v.setTextSize(sp); v.setTextColor(Color.rgb(232,238,247));
+        v.setTypeface(null, style); v.setPadding(dp(10),dp(5),dp(10),dp(5)); return v;
+    }
+    private TextView muted(String s){ TextView v=tv(s,12,0); v.setTextColor(Color.rgb(168,184,205)); return v; }
+    private TextView chip(String s, boolean selected){
+        TextView v=tv(s,12,selected?1:0); v.setGravity(Gravity.CENTER); v.setSingleLine(false);
+        v.setTextColor(selected?Color.WHITE:Color.rgb(198,213,232));
+        v.setBackground(glass(selected?Color.argb(124,70,132,220):Color.argb(42,255,255,255), 18));
+        v.setPadding(dp(14),dp(8),dp(14),dp(8)); if (Build.VERSION.SDK_INT >= 21) v.setElevation(dp(selected?4:1)); return v;
+    }
+    private Button btn(String s, boolean primary) {
+        Button b=new Button(this); b.setText(s); b.setAllCaps(false); b.setTextSize(14); b.setTextColor(Color.WHITE); b.setGravity(Gravity.CENTER);
+        b.setMinHeight(dp(48)); b.setPadding(dp(12),0,dp(12),0);
+        b.setBackground(glass(primary?Color.argb(142,48,116,210):Color.argb(64,255,255,255), 20));
+        if (Build.VERSION.SDK_INT >= 21) { b.setElevation(dp(primary?6:4)); b.setTranslationZ(dp(primary?2:1)); }
+        return b;
+    }
+    private LinearLayout card(){
+        LinearLayout c=new LinearLayout(this); c.setOrientation(LinearLayout.VERTICAL); c.setPadding(dp(13),dp(13),dp(13),dp(13));
+        c.setBackground(glass(Color.argb(48,255,255,255), 26)); if (Build.VERSION.SDK_INT >= 21) c.setElevation(dp(3));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.setMargins(dp(10),dp(7),dp(10),dp(7)); content.addView(c,lp); return c;
+    }
+    private void section(LinearLayout l, String title, String subtitle){
+        l.addView(tv(title,16,1)); if(subtitle!=null && subtitle.length()>0) l.addView(muted(subtitle));
+    }
+    private void addBtn(LinearLayout l, String s, boolean primary, View.OnClickListener c){
+        Button b=btn(s, primary); b.setOnClickListener(c); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(52)); lp.setMargins(0,dp(5),0,dp(5)); l.addView(b, lp);
+    }
+    private void pillRow(LinearLayout l, String label, String value){
+        LinearLayout r=new LinearLayout(this); r.setOrientation(LinearLayout.HORIZONTAL); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(0,dp(3),0,dp(3));
+        TextView a=muted(label); TextView b=tv(value,13,1); b.setGravity(Gravity.RIGHT); r.addView(a,new LinearLayout.LayoutParams(0,-2,1)); r.addView(b,new LinearLayout.LayoutParams(0,-2,1)); l.addView(r);
+    }
     private void show(String s){ out.setText(s); }
 
     private void renderUi() {
         root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackground(appBg());
-        status = tv("IceCam v7.4 · hook trace", 20, 1); status.setPadding(dp(14),dp(12),dp(14),dp(8)); root.addView(status);
+        status = tv("IceCam " + APP_VERSION, 20, 1); status.setPadding(dp(14),dp(12),dp(14),dp(6)); root.addView(status);
+        TextView hint = muted("Development build · log-only hook telemetry"); hint.setPadding(dp(14),0,dp(14),dp(6)); root.addView(hint);
+
         HorizontalScrollView hsv = new HorizontalScrollView(this); hsv.setHorizontalScrollBarEnabled(false); tabBar = new LinearLayout(this); tabBar.setOrientation(LinearLayout.HORIZONTAL); tabBar.setPadding(dp(8),dp(4),dp(8),dp(6)); hsv.addView(tabBar); root.addView(hsv);
-        for (String t: new String[]{"Dashboard","Root","Media","Hooks","Logs","Diagnostics"}) { TextView b=chip(t, tab.equals(t)); b.setOnClickListener(v->{tab=t; renderUi();}); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(t.equals("Diagnostics")?112:92),dp(44)); lp.setMargins(dp(3),0,dp(3),0); tabBar.addView(b, lp); }
+        for (String t: new String[]{"Dashboard","Root","Media","Hooks","Logs","Diagnostics"}) { final String ft=t; TextView b=chip(t, tab.equals(t)); b.setOnClickListener(v->{tab=ft; renderUi();}); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(t.equals("Diagnostics")?112:92),dp(44)); lp.setMargins(dp(3),0,dp(3),0); tabBar.addView(b, lp); }
+
         ScrollView sv = new ScrollView(this); content = new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL); content.setPadding(dp(6),0,dp(6),dp(6)); sv.addView(content); root.addView(sv, new LinearLayout.LayoutParams(-1,0,1));
-        out = tv("stdout/stderr/exitCode will appear here", 12, 0); out.setTextColor(Color.rgb(155,205,255)); out.setMovementMethod(new ScrollingMovementMethod()); out.setBackground(bg(Color.argb(42,0,0,0), 20)); LinearLayout.LayoutParams outLp=new LinearLayout.LayoutParams(-1,dp(132)); outLp.setMargins(dp(10),dp(4),dp(10),dp(10)); root.addView(out, outLp);
+        out = tv("Command output: stdout / stderr / exitCode", 12, 0); out.setTextColor(Color.rgb(160,210,255)); out.setMovementMethod(new ScrollingMovementMethod()); out.setBackground(round(Color.argb(48,0,0,0), 20)); LinearLayout.LayoutParams outLp=new LinearLayout.LayoutParams(-1,dp(128)); outLp.setMargins(dp(10),dp(4),dp(10),dp(10)); root.addView(out, outLp);
         setContentView(root);
         if(tab.equals("Dashboard")) dashboard(); else if(tab.equals("Root")) rootTab(); else if(tab.equals("Media")) mediaTab(); else if(tab.equals("Hooks")) hooksTab(); else if(tab.equals("Logs")) logsTab(); else diagTab();
     }
 
     private void dashboard(){
-        LinearLayout c=card(); c.addView(tv("Replacement: "+(replacementActive?"ACTIVE":"STOPPED"),16,1)); c.addView(tv("Hook mode: "+mode,14,0)); c.addView(tv("Camera profile: "+cameraMode,14,0)); c.addView(tv("Media type: "+mediaType,14,0)); c.addView(tv("Media URI: "+String.valueOf(mediaUri),12,0));
-        LinearLayout a=card(); addBtn(a,"Start Replacement",v->startReplacement()); addBtn(a,"Stop Replacement",v->stopReplacement()); addBtn(a,"Write Config + Prepare Hooks",v->prepareHooks()); addBtn(a,"Export Debug Bundle",v->exportDebugBundle());
+        LinearLayout s=card(); section(s,"Status", "Current local UI state. Root state is checked by Step 1.");
+        pillRow(s,"Replacement", replacementActive?"ACTIVE":"STOPPED"); pillRow(s,"Hook mode",mode); pillRow(s,"Camera target",cameraMode); pillRow(s,"Media",mediaType); pillRow(s,"Selected",mediaUri==null?"none":"yes");
+
+        LinearLayout w=card(); section(w,"Diagnostic flow", "Press in order. Do not skip steps while testing hook telemetry.");
+        addBtn(w,"1 · Request Root Check", true, v->requestRootCheck());
+        addBtn(w,"2 · Prepare Hook Layer", true, v->prepareHooks());
+        addBtn(w,"3A · Select Photo", false, v->selectPhoto());
+        addBtn(w,"3B · Select Video", false, v->selectVideo());
+        addBtn(w,"4 · Start Replacement", true, v->startReplacement());
+        addBtn(w,"5 · Open target camera manually", false, v->show("Now open Camera / Telegram / Chrome camera screen. After testing, return here and press Step 6."));
+        addBtn(w,"6 · Export Debug Bundle", true, v->exportDebugBundle());
+        addBtn(w,"Stop Replacement", false, v->stopReplacement());
+
+        LinearLayout n=card(); section(n,"Expected v7 hook markers", null);
+        n.addView(muted("[LOAD] → [HOOKED] → getCameraIdList → getCameraCharacteristics → openCamera"));
     }
-    private void rootTab(){ LinearLayout c=card(); c.addView(tv("control path: "+ctl,13,0)); c.addView(tv("module path: "+ice,13,0)); LinearLayout a=card(); addBtn(a,"Request Root Check",v->requestRootCheck()); addBtn(a,"Prepare Hook Layer",v->prepareHooks()); addBtn(a,"Clear Logs",v->runCtl("clear-logs")); addBtn(a,"Export Debug Bundle",v->exportDebugBundle()); }
+    private void rootTab(){
+        LinearLayout c=card(); section(c,"Root / module paths", "No automatic su on app start."); c.addView(muted("control path: "+ctl)); c.addView(muted("module path: "+ice));
+        LinearLayout a=card(); section(a,"Root actions", "Only low-level module operations are here.");
+        addBtn(a,"Request Root Check", true, v->requestRootCheck());
+        addBtn(a,"Prepare Hook Layer", false, v->prepareHooks());
+        addBtn(a,"Clear Logs", false, v->runCtl("clear-logs"));
+    }
     private void mediaTab(){
-        LinearLayout a=card(); addBtn(a,"Select Photo",v->selectPhoto()); addBtn(a,"Select Video",v->selectVideo()); addBtn(a,"Start Replacement",v->startReplacement()); addBtn(a,"Stop Replacement",v->stopReplacement());
-        LinearLayout b=card(); addBtn(b,"Loop "+(loop?"ON":"OFF"),v->{loop=!loop; renderUi();}); addBtn(b,"Mirror",v->{mirror=!mirror; applyPreviewTransform(); writeAppConfigViaRoot();});
-        addBtn(b,"Zoom +",v->{zoom+=0.1f; applyPreviewTransform(); writeAppConfigViaRoot();}); addBtn(b,"Zoom -",v->{zoom=Math.max(0.1f,zoom-0.1f); applyPreviewTransform(); writeAppConfigViaRoot();});
-        addBtn(b,"Rotate",v->{rotation=(rotation+90)%360; applyPreviewTransform(); writeAppConfigViaRoot();}); addBtn(b,"Reset",v->{zoom=1;rotation=0;mirror=false;applyPreviewTransform();writeAppConfigViaRoot();});
-        LinearLayout info=card(); info.addView(tv("Selected media URI: "+String.valueOf(mediaUri),12,0)); info.addView(tv("Working copy path: /data/adb/icecam/media/source",12,0));
-        FrameLayout frame = new FrameLayout(this); frame.setBackground(bg(Color.argb(82,0,0,0), 22)); LinearLayout.LayoutParams flp=new LinearLayout.LayoutParams(-1,dp(260)); flp.setMargins(dp(10),dp(8),dp(10),dp(8)); content.addView(frame, flp);
+        LinearLayout info=card(); section(info,"Media preview", "Selection buttons are in Dashboard step 3 to keep testing order clear.");
+        info.addView(muted("Selected media URI: "+String.valueOf(mediaUri))); info.addView(muted("Working copy path: /data/adb/icecam/media/source"));
+        LinearLayout b=card(); section(b,"Preview controls", "Affects preview/config only; frame injection is not enabled in v7.");
+        addBtn(b,"Loop "+(loop?"ON":"OFF"),false,v->{loop=!loop; renderUi();}); addBtn(b,"Mirror",false,v->{mirror=!mirror; applyPreviewTransform(); writeAppConfigViaRoot();});
+        addBtn(b,"Zoom +",false,v->{zoom+=0.1f; applyPreviewTransform(); writeAppConfigViaRoot();}); addBtn(b,"Zoom -",false,v->{zoom=Math.max(0.1f,zoom-0.1f); applyPreviewTransform(); writeAppConfigViaRoot();});
+        addBtn(b,"Rotate",false,v->{rotation=(rotation+90)%360; applyPreviewTransform(); writeAppConfigViaRoot();}); addBtn(b,"Reset Transform",false,v->{zoom=1;rotation=0;mirror=false;applyPreviewTransform();writeAppConfigViaRoot();});
+        FrameLayout frame = new FrameLayout(this); frame.setBackground(round(Color.argb(82,0,0,0), 22)); LinearLayout.LayoutParams flp=new LinearLayout.LayoutParams(-1,dp(270)); flp.setMargins(dp(10),dp(8),dp(10),dp(8)); content.addView(frame, flp);
         imagePreview = new ImageView(this); imagePreview.setScaleType(ImageView.ScaleType.FIT_CENTER); videoPreview = new VideoView(this);
         frame.addView(imagePreview, new FrameLayout.LayoutParams(-1,-1, Gravity.CENTER)); frame.addView(videoPreview, new FrameLayout.LayoutParams(-1,-1, Gravity.CENTER)); updatePreview();
     }
-    private void hooksTab(){ LinearLayout c=card(); c.addView(tv("Mode: "+mode,15,1)); c.addView(tv("Target camera: "+cameraMode,15,0)); LinearLayout a=card(); addBtn(a,"Mode: log-only",v->{mode="log-only";writeAppConfigViaRoot();renderUi();}); addBtn(a,"Mode: block-open-test",v->{mode="block-open-test";writeAppConfigViaRoot();renderUi();}); addBtn(a,"Mode: virtual-stub",v->{mode="virtual-stub";writeAppConfigViaRoot();renderUi();}); addBtn(a,"Target: auto",v->{cameraMode="auto";writeAppConfigViaRoot();renderUi();}); addBtn(a,"Target: back",v->{cameraMode="back";writeAppConfigViaRoot();renderUi();}); addBtn(a,"Target: front",v->{cameraMode="front";writeAppConfigViaRoot();renderUi();}); addBtn(a,"Write Config + Prepare Hooks",v->prepareHooks()); addBtn(a,"Show Hook Log",v->runRoot("cat /data/adb/icecam/logs/hook.log 2>/dev/null || true")); }
-    private void logsTab(){ LinearLayout a=card(); addBtn(a,"Show Hook Log",v->runRoot("cat /data/adb/icecam/logs/hook.log 2>/dev/null || true")); addBtn(a,"Show Module Log",v->runRoot("cat /data/adb/icecam/logs/module.log 2>/dev/null || true")); addBtn(a,"Export Debug Bundle",v->exportDebugBundle()); addBtn(a,"Clear Logs",v->runCtl("clear-logs")); }
-    private void diagTab(){ LinearLayout c=card(); c.addView(tv("package: "+getPackageName(),14,0)); c.addView(tv("device: "+Build.MANUFACTURER+" "+Build.MODEL+" / "+Build.DEVICE,14,0)); c.addView(tv("sdk: "+Build.VERSION.SDK_INT,14,0)); c.addView(tv("abi: "+Arrays.toString(Build.SUPPORTED_ABIS),13,0)); LinearLayout a=card(); addBtn(a,"Dump CameraManager",v->dumpCameras()); }
+    private void hooksTab(){
+        LinearLayout c=card(); section(c,"Hook configuration", "v7 is telemetry-only. Camera frames are not replaced yet."); pillRow(c,"Mode",mode); pillRow(c,"Target",cameraMode);
+        LinearLayout a=card(); section(a,"Mode", null); addBtn(a,"log-only", mode.equals("log-only"),v->{mode="log-only";writeAppConfigViaRoot();renderUi();}); addBtn(a,"block-open-test", mode.equals("block-open-test"),v->{mode="block-open-test";writeAppConfigViaRoot();renderUi();}); addBtn(a,"virtual-stub", mode.equals("virtual-stub"),v->{mode="virtual-stub";writeAppConfigViaRoot();renderUi();});
+        LinearLayout t=card(); section(t,"Target camera", null); addBtn(t,"auto", cameraMode.equals("auto"),v->{cameraMode="auto";writeAppConfigViaRoot();renderUi();}); addBtn(t,"back", cameraMode.equals("back"),v->{cameraMode="back";writeAppConfigViaRoot();renderUi();}); addBtn(t,"front", cameraMode.equals("front"),v->{cameraMode="front";writeAppConfigViaRoot();renderUi();});
+    }
+    private void logsTab(){
+        LinearLayout a=card(); section(a,"Logs", "Read-only views. Bundle export is Step 6 on Dashboard.");
+        addBtn(a,"Show Hook Log",true,v->runRoot("cat /data/adb/icecam/logs/hook.log 2>/dev/null || true"));
+        addBtn(a,"Show Module Log",false,v->runRoot("cat /data/adb/icecam/logs/module.log 2>/dev/null || true"));
+        addBtn(a,"Show Filtered Logcat",false,v->runRoot("logcat -d -v threadtime | grep -E 'IceCam|LSPosed|Xposed|CameraManager|Camera2|CameraService|CameraProvider' | tail -n 260"));
+    }
+    private void diagTab(){
+        LinearLayout c=card(); section(c,"Device", null); c.addView(muted("package: "+getPackageName())); c.addView(muted("device: "+Build.MANUFACTURER+" "+Build.MODEL+" / "+Build.DEVICE)); c.addView(muted("sdk: "+Build.VERSION.SDK_INT)); c.addView(muted("abi: "+Arrays.toString(Build.SUPPORTED_ABIS)));
+        LinearLayout a=card(); section(a,"Camera diagnostics", null); addBtn(a,"Dump CameraManager",true,v->dumpCameras());
+    }
 
     private void selectPhoto(){ Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT); i.addCategory(Intent.CATEGORY_OPENABLE); i.setType("image/*"); startActivityForResult(i, REQ_PHOTO); }
     private void selectVideo(){ Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT); i.addCategory(Intent.CATEGORY_OPENABLE); i.setType("video/*"); startActivityForResult(i, REQ_VIDEO); }
-    @Override protected void onActivityResult(int r,int c,Intent d){ super.onActivityResult(r,c,d); if(c==RESULT_OK&&d!=null){ mediaUri=d.getData(); getContentResolver().takePersistableUriPermission(mediaUri, Intent.FLAG_GRANT_READ_URI_PERMISSION); mediaType=(r==REQ_VIDEO)?"video":"photo"; renderUi(); } }
+    @Override protected void onActivityResult(int r,int c,Intent d){ super.onActivityResult(r,c,d); if(c==RESULT_OK&&d!=null){ mediaUri=d.getData(); try{getContentResolver().takePersistableUriPermission(mediaUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Throwable ignored){} mediaType=(r==REQ_VIDEO)?"video":"photo"; tab="Dashboard"; renderUi(); } }
     private void updatePreview(){ if(mediaUri==null) return; if(mediaType.equals("video")){ imagePreview.setVisibility(View.GONE); videoPreview.setVisibility(View.VISIBLE); videoPreview.setVideoURI(mediaUri); videoPreview.setOnPreparedListener(mp->{mp.setLooping(loop); videoPreview.start();}); } else { videoPreview.setVisibility(View.GONE); imagePreview.setVisibility(View.VISIBLE); imagePreview.setImageURI(mediaUri); } applyPreviewTransform(); }
     private void applyPreviewTransform(){ View v=mediaType.equals("video")?videoPreview:imagePreview; if(v==null)return; v.setScaleX((mirror?-1:1)*zoom); v.setScaleY(zoom); v.setRotation(rotation); }
 
     private void requestRootCheck(){ runCtl("status"); }
     private void prepareHooks(){ writeAppConfigViaRoot(); runCtl("prepare-hooks"); }
-    private void startReplacement(){ if(mediaUri==null){show("Select photo/video first");return;} copyMediaToRoot(); replacementActive=true; writeAppConfigViaRoot(); runCtl("start"); }
+    private void startReplacement(){ if(mediaUri==null){show("Step 3 required: select photo/video first");return;} copyMediaToRoot(); replacementActive=true; writeAppConfigViaRoot(); runCtl("start"); }
     private void stopReplacement(){ replacementActive=false; writeAppConfigViaRoot(); runCtl("stop"); }
     private void exportDebugBundle(){ runCtl("logs"); }
     private void runCtl(String arg){ runRoot(ctl+" "+arg); }
 
     private String json(){ String uri=(mediaUri==null?"":mediaUri.toString()).replace("\\","\\\\").replace("\"","\\\""); return "{\n"+
-            "  \"version\": \"7.0-from-scratch\",\n"+
+            "  \"version\": \""+APP_VERSION+"\",\n"+
             "  \"active\": "+replacementActive+",\n"+
             "  \"mode\": \""+mode+"\",\n"+
             "  \"cameraMode\": \""+cameraMode+"\",\n"+
