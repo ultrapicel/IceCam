@@ -1,18 +1,20 @@
-plugins { id 'com.android.application' }
+plugins {
+    id "com.android.application"
+}
 
 android {
-    namespace 'com.icecam.dev'
+    namespace "com.icecam.dev"
     compileSdk 35
+
     defaultConfig {
-        applicationId 'com.icecam.dev'
-        minSdk 26
+        applicationId "com.icecam.dev"
+        minSdk 23
         targetSdk 35
-        versionCode 315
-        versionName '0.3.1.5-dev'
+        versionCode 40
+        versionName "0.4.0-dev"
     }
 }
 
-// Important: no Maven Xposed dependency here. GitHub Actions must build offline from local stub.
 dependencies {
-    compileOnly files('libs/xposed-api-stub.jar')
+    compileOnly files("libs/xposed-api-stub.jar")
 }

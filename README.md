@@ -1,26 +1,58 @@
-# IceCam v3.1 dev
+# IceCam v4 dev
 
-Fixes root module layout. `icecamctl` is now installed at:
+IceCam v4 is a GitHub-ready Android + root module + LSPosed hook-layer skeleton.
 
-```sh
-/data/adb/icecam/bin/icecamctl
-```
+## Build
 
-Update matrix:
+Upload this repository to GitHub and run:
+
+`Actions -> Build IceCam v4`
+
+Artifacts:
+
+- `IceCam-app-v0.4.0-dev.apk`
+- `IceCam-root-module-v0.4.0-dev.zip`
+- `IceCam-source-snapshot-v0.4.0-dev.zip`
+
+## Install
+
+For v4:
 
 ```text
 APK: update
 Root module: reinstall
 Reboot: required
-LSPosed: enable IceCam for target camera apps
+LSPosed scope: Camera / Telegram / Chrome
 ```
 
-v3.1 is log-only hook verification. It logs Camera2 calls; it does not replace frames yet.
+## Current behavior
 
+v4 is log-only. It does not replace frames yet.
 
-## v3.1.5
-GitHub Actions fixed: no local gradlew required; workflow installs Gradle 8.7 and locates the project root automatically.
+It should log:
 
-## v3.1.5 fix
-- Xposed API is vendored as a local compileOnly stub JAR for GitHub Actions.
-- The stub JAR is only for compilation and is not packaged into the APK.
+- package load
+- `CameraManager.getCameraIdList`
+- `CameraManager.getCameraCharacteristics`
+- `CameraManager.openCamera`
+- legacy `android.hardware.Camera.open`
+
+Main log:
+
+```sh
+su -c cat /data/adb/icecam/logs/hook.log
+```
+
+Logcat fallback:
+
+```sh
+logcat -d | grep 'IceCam/Hook'
+```
+
+## Control
+
+```sh
+su -c /data/adb/icecam/bin/icecamctl status
+su -c /data/adb/icecam/bin/icecamctl prepare-hooks
+su -c /data/adb/icecam/bin/icecamctl logs
+```

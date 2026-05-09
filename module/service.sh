@@ -1,8 +1,12 @@
 #!/system/bin/sh
 ICE=/data/adb/icecam
-mkdir -p "$ICE/bin" "$ICE/logs" "$ICE/config" "$ICE/state"
-cp -f /data/adb/modules/icecam/bin/icecamctl "$ICE/bin/icecamctl" 2>/dev/null
-chmod 755 "$ICE/bin/icecamctl" 2>/dev/null
-ln -sf "$ICE/bin/icecamctl" "$ICE/icecamctl" 2>/dev/null
-echo "$(date '+%Y-%m-%d %H:%M:%S') service: IceCam v0.3.1.5-dev start" >> "$ICE/logs/module.log"
+MODDIR=${0%/*}
+mkdir -p "$ICE/bin" "$ICE/logs" "$ICE/state" "$ICE/config"
+if [ -f "$MODDIR/common/bin/icecamctl" ]; then
+  cp -f "$MODDIR/common/bin/icecamctl" "$ICE/bin/icecamctl"
+  chmod 755 "$ICE/bin/icecamctl"
+  ln -sf "$ICE/bin/icecamctl" "$ICE/icecamctl"
+fi
+chmod 777 "$ICE/logs"
+echo "$(date '+%F %T') service: IceCam v0.4.0-dev start" >> "$ICE/logs/module.log"
 echo "sdk=$(getprop ro.build.version.sdk) device=$(getprop ro.product.device) abi=$(getprop ro.product.cpu.abi)" >> "$ICE/logs/module.log"
