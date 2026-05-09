@@ -6,22 +6,22 @@ STATE="$ICE/state"
 MEDIA="$ICE/media"
 CACHE="$ICE/cache"
 BIN="$ICE/bin"
-VERSION="v8.0"
+VERSION="v8.1"
 APP_PKG="com.icecam.dev"
 TARGETS="com.android.camera com.android.chrome org.telegram.messenger org.telegram.messenger.web"
 
 init_dirs() {
   mkdir -p "$BIN" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE"
-  touch "$LOGS/module.log" "$LOGS/hook.log"
+  touch "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log"
   chmod 755 /data/adb 2>/dev/null
   chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
-  chmod 666 "$LOGS/module.log" "$LOGS/hook.log" 2>/dev/null
+  chmod 666 "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" 2>/dev/null
   [ -f "$STATE/active" ] || echo 0 > "$STATE/active"
   [ -f "$STATE/prepared" ] || echo 0 > "$STATE/prepared"
   chmod 666 "$STATE/active" "$STATE/prepared" 2>/dev/null
   [ -f "$CONFIG/app_config.json" ] || cat > "$CONFIG/app_config.json" <<JSON
 {
-  "version":"8.0-profile-clone",
+  "version":"8.1-logcat-profile-bridge",
   "active":false,
   "mode":"log-only",
   "cameraMode":"auto",
@@ -64,7 +64,7 @@ collect_debug_bundle() {
   OUT=/sdcard/Download/icecam_debug_${VERSION}_${TS}.tar.gz
   TMP=/data/local/tmp/icecam_debug_${VERSION}_${TS}
   rm -rf "$TMP"
-  mkdir -p "$TMP" "$TMP/icecam" "$TMP/lsposed" "$TMP/system" "$TMP/packages" "$TMP/camera" "$TMP/logcat" "$TMP/media"
+  mkdir -p "$TMP" "$TMP/icecam" "$TMP/icecam/cache" "$TMP/lsposed" "$TMP/system" "$TMP/packages" "$TMP/camera" "$TMP/logcat" "$TMP/media"
 
   echo "IceCam debug bundle $VERSION" > "$TMP/README.txt"
   echo "created=$(date '+%F %T')" >> "$TMP/README.txt"
@@ -101,6 +101,8 @@ collect_debug_bundle() {
 
   logcat -d -v threadtime > "$TMP/logcat/logcat_full.txt" 2>&1
   logcat -d -v threadtime | grep -E 'IceCam|LSPosed|Xposed|CameraManager|Camera2|CameraService|CameraProvider|android.hardware.Camera|chrom|telegram|camera' > "$TMP/logcat/logcat_filtered.txt" 2>&1
+  grep 'ProfileCacheJson' "$TMP/logcat/logcat_filtered.txt" | sed 's/^.*ProfileCacheJson //' > "$TMP/icecam/cache/camera_profiles_from_logcat.jsonl" 2>/dev/null
+  grep 'AccessProbe' "$TMP/logcat/logcat_filtered.txt" > "$TMP/icecam/cache/hook_access_probe_from_logcat.txt" 2>/dev/null
   logcat -b crash -d -v threadtime > "$TMP/logcat/logcat_crash.txt" 2>&1
   dmesg > "$TMP/logcat/dmesg.txt" 2>&1
   cat /proc/last_kmsg > "$TMP/logcat/last_kmsg.txt" 2>&1
@@ -159,14 +161,14 @@ case "$1" in
     [ -f "$STATE/active" ] || echo 0 > "$STATE/active"
     chmod 755 /data/adb 2>/dev/null
     chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
-    chmod 666 "$STATE/active" "$STATE/prepared" "$CONFIG/app_config.json" "$LOGS/hook.log" "$LOGS/module.log" 2>/dev/null
+    chmod 666 "$STATE/active" "$STATE/prepared" "$CONFIG/app_config.json" "$LOGS/hook.log" "$LOGS/module.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" 2>/dev/null
     echo "prepared hooks"
     ;;
   start)
     echo 1 > "$STATE/active"
     chmod 666 "$STATE/active" 2>/dev/null
     chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
-    chmod 666 "$LOGS/hook.log" "$CONFIG/app_config.json" 2>/dev/null
+    chmod 666 "$LOGS/hook.log" "$CONFIG/app_config.json" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" 2>/dev/null
     echo "$(date '+%F %T') replacement start requested" >> "$LOGS/hook.log"
     echo "replacement active"
     ;;
@@ -174,7 +176,7 @@ case "$1" in
     echo 0 > "$STATE/active"
     chmod 666 "$STATE/active" 2>/dev/null
     chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
-    chmod 666 "$LOGS/hook.log" "$CONFIG/app_config.json" 2>/dev/null
+    chmod 666 "$LOGS/hook.log" "$CONFIG/app_config.json" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" 2>/dev/null
     echo "$(date '+%F %T') replacement stop requested" >> "$LOGS/hook.log"
     echo "replacement stopped"
     ;;
@@ -183,7 +185,7 @@ case "$1" in
     ;;
   clear-logs)
     rm -f "$LOGS"/*.log
-    touch "$LOGS/module.log" "$LOGS/hook.log"
+    touch "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log"
     chmod 666 "$LOGS"/*.log 2>/dev/null
     logcat -c 2>/dev/null
     echo "logs cleared"

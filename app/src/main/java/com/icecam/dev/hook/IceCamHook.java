@@ -36,6 +36,8 @@ public class IceCamHook implements IXposedHookLoadPackage {
                 + " mediaPath=" + MEDIA
                 + " mediaExists=" + new File(MEDIA).exists());
 
+        accessProbe(lp);
+
         safeInit("hookCamera2.CameraManager", new Runnable() { public void run() { hookCameraManager(lp); } });
         safeInit("hookCamera2.CameraDevice", new Runnable() { public void run() { hookCameraDevice(lp); } });
         safeInit("hookCamera1", new Runnable() { public void run() { hookCamera1(lp); } });
@@ -150,6 +152,44 @@ public class IceCamHook implements IXposedHookLoadPackage {
         });
     }
 
+    private static void accessProbe(XC_LoadPackage.LoadPackageParam lp) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("[AccessProbe] package=").append(lp.packageName)
+          .append(" process=").append(lp.processName)
+          .append(" activeRead=").append(probeRead(ACTIVE))
+          .append(" configRead=").append(probeRead(CONFIG))
+          .append(" mediaExists=").append(probeExists(MEDIA))
+          .append(" hookLogWrite=").append(probeAppend(LOG))
+          .append(" cacheWrite=").append(probeAppend(PROFILE_EVENTS));
+        log(sb.toString());
+        try { Log.i(TAG, sb.toString()); } catch (Throwable ignored) {}
+    }
+
+    private static String probeRead(String path) {
+        try {
+            File f = new File(path);
+            if (!f.exists()) return "missing";
+            FileInputStream in = new FileInputStream(f);
+            int b = in.read();
+            in.close();
+            return "ok:" + b;
+        } catch (Throwable t) { return shortErr(t); }
+    }
+
+    private static String probeExists(String path) {
+        try { return String.valueOf(new File(path).exists()); }
+        catch (Throwable t) { return shortErr(t); }
+    }
+
+    private static String probeAppend(String path) {
+        try {
+            FileOutputStream out = new FileOutputStream(path, true);
+            out.write(("# probe " + System.currentTimeMillis() + "\n").getBytes("UTF-8"));
+            out.close();
+            return "ok";
+        } catch (Throwable t) { return shortErr(t); }
+    }
+
     private static void cacheCameraProfile(XC_LoadPackage.LoadPackageParam lp, String id, Object obj) {
         try {
             if (!(obj instanceof CameraCharacteristics)) {
@@ -158,6 +198,8 @@ public class IceCamHook implements IXposedHookLoadPackage {
             }
             CameraCharacteristics cc = (CameraCharacteristics) obj;
             String json = profileJson(lp, id, cc);
+            try { Log.i(TAG, "ProfileCacheJson " + json); } catch (Throwable ignored) {}
+            xlog("IceCam/Hook ProfileCacheJson " + json);
             appendFile(PROFILE_EVENTS, json + "\n");
             writeFile(PROFILE_CACHE, json + "\n");
             log("[ProfileCache] saved id=" + id
@@ -174,7 +216,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static String profileJson(XC_LoadPackage.LoadPackageParam lp, String id, CameraCharacteristics cc) {
         StringBuilder sb = new StringBuilder();
         sb.append('{');
-        field(sb, "version", "8.0-profile-clone", true);
+        field(sb, "version", "8.1-logcat-profile-bridge", true);
         field(sb, "ts", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()), false);
         field(sb, "package", lp.packageName, false);
         field(sb, "process", lp.processName, false);

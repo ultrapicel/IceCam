@@ -1,25 +1,17 @@
-# IceCam v8.0 profile-clone
+# IceCam v8.1 logcat profile bridge
 
-v8.0 is a passive CameraCharacteristics profile clone/cache stage. It still does **not** inject frames.
+v8.1 keeps v8 passive CameraCharacteristics profiling, but changes diagnostics to handle SELinux/app-domain write restrictions.
 
-Changes:
-- Keeps v7.6 stable LSPosed hook baseline.
-- Adds profile cache for real `CameraCharacteristics`.
-- Saves latest profile to `/data/adb/icecam/cache/camera_profiles.json`.
-- Appends profile events to `/data/adb/icecam/cache/camera_profiles.jsonl`.
-- Adds compatibility profile modes: `strict-real`, `compatibility`, `experimental`.
-- Adds UI buttons to read profile cache.
-- Debug bundle includes `/data/adb/icecam/cache`.
+Current state:
+- LSPosed hook layer is working.
+- Camera2 calls are intercepted.
+- Some target app processes cannot write/read `/data/adb/icecam/*` directly even when chmod is permissive.
+- Therefore hook telemetry and profile JSON are also emitted to logcat/LSPosed logs and collected by `icecamctl logs`.
 
-Install/test:
-1. Install APK.
-2. Install root module ZIP.
-3. Reboot.
-4. Keep LSPosed scope: Camera, Telegram, Chrome, target apps.
-5. Open IceCam -> Dashboard -> run steps 1..6.
-6. Open target camera screens before exporting the bundle.
+Important files in debug bundle:
+- `logcat/logcat_filtered.txt`
+- `icecam/cache/camera_profiles_from_logcat.jsonl`
+- `icecam/cache/hook_access_probe_from_logcat.txt`
+- `icecam/permissions.txt`
 
-Expected markers:
-`[LOAD]`, `[HOOKED]`, `getCameraIdList`, `getCameraCharacteristics`, `openCamera`, `[ProfileCache] saved id=...`.
-
-Next stage after v8 passes: v9 media render pipeline.
+v8.1 is still passive. It does not inject frames.

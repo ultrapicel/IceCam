@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam v8.0 Profile Clone Layer
-version=8.0-profile-clone
+name=IceCam v8.1 Profile Clone Layer
+version=8.1-logcat-profile-bridge
 versionCode=9
 author=IceCam
 summary=IceCam root control layer, LSPosed telemetry, and passive CameraCharacteristics profile cache

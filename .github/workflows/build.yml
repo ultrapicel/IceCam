@@ -1,4 +1,4 @@
-name: Build IceCam v8.0
+name: Build IceCam v8.1
 on:
   workflow_dispatch:
   push:
@@ -30,18 +30,18 @@ jobs:
       - name: Build root module zip
         run: |
           cd module
-          zip -r ../IceCam-root-module-v8.0.zip .
+          zip -r ../IceCam-root-module-v8.1.zip .
       - name: Build source snapshot
         run: |
-          zip -r IceCam-source-snapshot-v8.0.zip . -x "*.git*" -x "app/build/*" -x "gradle-8.7/*" -x "gradle.zip"
+          zip -r IceCam-source-snapshot-v8.1.zip . -x "*.git*" -x "app/build/*" -x "gradle-8.7/*" -x "gradle.zip"
       - name: Collect artifacts
         run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk artifacts/IceCam-app-v8.0.apk
-          cp IceCam-root-module-v8.0.zip artifacts/
-          cp IceCam-source-snapshot-v8.0.zip artifacts/
-          printf "IceCam v8.0 profile-clone build\ncommit=%s\ndate=%s\n" "$GITHUB_SHA" "$(date -u)" > artifacts/build-info.txt
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/IceCam-app-v8.1.apk
+          cp IceCam-root-module-v8.1.zip artifacts/
+          cp IceCam-source-snapshot-v8.1.zip artifacts/
+          printf "IceCam v8.1 profile-clone build\ncommit=%s\ndate=%s\n" "$GITHUB_SHA" "$(date -u)" > artifacts/build-info.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: IceCam-v8.0-profile-clone
+          name: IceCam-v8.1-profile-clone
           path: artifacts/*
