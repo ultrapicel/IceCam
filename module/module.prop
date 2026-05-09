@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam System Camera
-version=0.1.0-dev
-versionCode=1
+name=IceCam System Camera Dev
+version=0.2.0-dev
+versionCode=20
 author=IceCam Project
-description=Development root module for IceCam camera replacement research. Supports KernelSU/Magisk/APatch layout.
+description=IceCam root module dev layer: logging, camera hook preparation, stream state paths. Android 12-15 target.

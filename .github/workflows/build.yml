@@ -1,4 +1,4 @@
-name: Build IceCam v1
+name: Build IceCam v2
 
 on:
   workflow_dispatch:
@@ -27,18 +27,18 @@ jobs:
       - name: Build root module ZIP
         run: |
           cd module
-          zip -r ../IceCam-root-module-v0.1.1-dev.zip .
+          zip -r ../IceCam-root-module-v0.2.0-dev.zip .
           cd ..
 
       - name: Collect artifacts
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/debug/app-debug.apk out/IceCam-app-v0.1.1-dev.apk
-          cp IceCam-root-module-v0.1.1-dev.zip out/
-          zip -r out/IceCam-source-snapshot.zip . -x '.git/*' 'out/*'
+          cp app/build/outputs/apk/debug/app-debug.apk out/IceCam-app-v0.2.0-dev.apk
+          cp IceCam-root-module-v0.2.0-dev.zip out/
+          zip -r out/IceCam-source-snapshot-v0.2.0-dev.zip . -x '.git/*' 'out/*' '.gradle/*' '**/build/*'
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: IceCam-v1-dev
+          name: IceCam-v2-dev
           path: out/*

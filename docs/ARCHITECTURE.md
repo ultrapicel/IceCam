@@ -1,33 +1,31 @@
-# IceCam architecture
+# IceCam Architecture v2
 
-## Layers
+IceCam v2 is still a development skeleton. It introduces the media preview canvas, camera profile dump, module state paths, and hook preparation commands.
 
-1. IceCam App
-   - UI
-   - diagnostics
-   - media source control
-   - camera profile inspection
+## Components
 
-2. Root Module
-   - service scripts
-   - native libraries
-   - logs
-   - control binary
+- `app/`: Android APK control panel.
+- `module/`: KernelSU/Magisk/APatch root module.
+- `hooks/`: placeholder for LSPosed/Zygisk hook code.
+- `native/`: placeholder for future NDK camera hook code.
 
-3. Hook Layer
-   - LSPosed/Zygisk Java hooks
-   - native hooks
-   - Camera metadata spoof layer
+## v2 status
 
-4. Stream Engine
-   - MediaCodec pipeline
-   - OpenGL transform stage
-   - pan/zoom/rotate/mirror
-   - front/back profile routing
+Implemented:
 
-## Development policy
+- Root request from UI.
+- Module status check through `icecamctl status`.
+- Hook preparation state through `icecamctl prepare`.
+- Media picker.
+- SurfaceView preview renderer.
+- Pan/zoom/rotate/mirror/Fit/Fill controls.
+- CameraCharacteristics dump.
+- Detailed logs and export bundle.
 
-- dev builds log aggressively
-- release builds log only errors
-- no direct patching of foreign APK DEX files
-- GitHub Actions is the canonical build environment
+Not implemented yet:
+
+- Real Camera2 frame injection.
+- LSPosed runtime hooks.
+- Zygisk native hooks.
+- HAL/provider replacement.
+
