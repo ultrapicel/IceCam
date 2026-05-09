@@ -2,9 +2,11 @@ package com.icecam.dev.hook;
 
 import android.util.Log;
 import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.util.Range;
 import android.util.Size;
+import android.view.Surface;
 import java.io.*;
 import java.lang.reflect.Member;
 import java.text.SimpleDateFormat;
@@ -26,6 +28,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static final String PROFILE_EVENTS = CACHE_DIR + "/camera_profiles.jsonl";
     private static final String SESSION_EVENTS = CACHE_DIR + "/capture_session_events.jsonl";
     private static final String SURFACE_EVENTS = CACHE_DIR + "/surface_events.jsonl";
+    private static final String SURFACE_OWNERSHIP_EVENTS = CACHE_DIR + "/surface_ownership_events.jsonl";
 
     @Override
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lp) throws Throwable {
@@ -45,6 +48,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
         safeInit("hookCamera2.CameraCaptureSession", new Runnable() { public void run() { hookCameraSession(lp); } });
         safeInit("hookCamera1", new Runnable() { public void run() { hookCamera1(lp); } });
         safeInit("hookSurfaceTrace", new Runnable() { public void run() { hookSurfaceTrace(lp); } });
+        safeInit("hookSurfaceOwnershipTrace", new Runnable() { public void run() { hookSurfaceOwnershipTrace(lp); } });
     }
 
     private void safeInit(String name, Runnable r) {
@@ -120,16 +124,19 @@ public class IceCamHook implements IXposedHookLoadPackage {
         hookAll(cd, "createCaptureSession", new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
                 logEvent(lp, "[Camera2] CameraDevice.createCaptureSession", p);
+                surfaceOwnerEvent(lp, "CameraDevice.createCaptureSession", p, null);
             }
             @Override protected void afterHookedMethod(MethodHookParam p) {
                 log("[Camera2] CameraDevice.createCaptureSession after package=" + lp.packageName
                         + " active=" + active() + " mode=" + mode());
+                surfaceOwnerEvent(lp, "CameraDevice.createCaptureSession.after", p, p.getResult());
             }
         });
 
         hookAll(cd, "createCaptureRequest", new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
                 logEvent(lp, "[Camera2] CameraDevice.createCaptureRequest", p);
+                surfaceOwnerEvent(lp, "CameraDevice.createCaptureRequest", p, null);
             }
         });
 
@@ -182,11 +189,12 @@ public class IceCamHook implements IXposedHookLoadPackage {
     }
 
     private static void sessionEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p) {
-        String json = "{\"version\":\"9.2-surface-trace\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"9.3-surface-ownership\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"active\":" + active()
                 + ",\"mode\":\"" + esc(mode()) + "\",\"mediaExists\":" + new File(MEDIA).exists()
-                + ",\"args\":\"" + esc(argsSummary(p)) + "\"}";
+                + ",\"args\":\"" + esc(argsSummary(p)) + "\""
+                + ",\"requestTargets\":\"" + esc(requestTargetsFromArgs(p)) + "\"}";
         try { Log.i(TAG, "CaptureSessionJson " + json); } catch (Throwable ignored) {}
         xlog("IceCam/Hook CaptureSessionJson " + json);
         appendFile(SESSION_EVENTS, json + "\n");
@@ -252,7 +260,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     }
 
     private static void surfaceEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p) {
-        String json = "{\"version\":\"9.2-surface-trace\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"9.3-surface-ownership\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"thread\":\"" + esc(Thread.currentThread().getName())
                 + "\",\"active\":" + active() + ",\"mode\":\"" + esc(mode())
@@ -262,6 +270,144 @@ public class IceCamHook implements IXposedHookLoadPackage {
         try { Log.i(TAG, "SurfaceJson " + json); } catch (Throwable ignored) {}
         xlog("IceCam/Hook SurfaceJson " + json);
         appendFile(SURFACE_EVENTS, json + "\n");
+    }
+
+
+    private void hookSurfaceOwnershipTrace(final XC_LoadPackage.LoadPackageParam lp) {
+        final Class<?> builder = findClassBoot("android.hardware.camera2.CaptureRequest$Builder");
+        if (builder != null) {
+            hookAll(builder, "addTarget", new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam p) {
+                    surfaceOwnerEvent(lp, "CaptureRequest.Builder.addTarget", p, arg(p, 0, null));
+                }
+            });
+            hookAll(builder, "removeTarget", new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam p) {
+                    surfaceOwnerEvent(lp, "CaptureRequest.Builder.removeTarget", p, arg(p, 0, null));
+                }
+            });
+            hookAll(builder, "build", new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam p) {
+                    surfaceOwnerEvent(lp, "CaptureRequest.Builder.build.before", p, null);
+                }
+                @Override protected void afterHookedMethod(MethodHookParam p) {
+                    surfaceOwnerEvent(lp, "CaptureRequest.Builder.build.after", p, p.getResult());
+                }
+            });
+        }
+
+        final Class<?> outputConfig = findClassBoot("android.hardware.camera2.params.OutputConfiguration");
+        if (outputConfig != null) {
+            hookAll(outputConfig, "addSurface", new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam p) {
+                    surfaceOwnerEvent(lp, "OutputConfiguration.addSurface", p, arg(p, 0, null));
+                }
+            });
+            hookAll(outputConfig, "removeSurface", new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam p) {
+                    surfaceOwnerEvent(lp, "OutputConfiguration.removeSurface", p, arg(p, 0, null));
+                }
+            });
+            hookAll(outputConfig, "getSurfaces", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam p) {
+                    surfaceOwnerEvent(lp, "OutputConfiguration.getSurfaces.after", p, p.getResult());
+                }
+            });
+        }
+    }
+
+    private static void surfaceOwnerEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p, Object focus) {
+        String json = "{\"version\":\"9.3-surface-ownership\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+                + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
+                + "\",\"action\":\"" + esc(action) + "\",\"thread\":\"" + esc(Thread.currentThread().getName())
+                + "\",\"active\":" + active() + ",\"mode\":\"" + esc(mode())
+                + "\",\"this\":\"" + esc(objectId(p == null ? null : p.thisObject))
+                + "\",\"focus\":\"" + esc(surfaceOrObjectDetails(focus))
+                + "\",\"args\":\"" + esc(argsDetailed(p == null ? null : p.args))
+                + "\",\"requestTargets\":\"" + esc(requestTargetsFromObject(focus)) + "\"}";
+        try { Log.i(TAG, "SurfaceOwnerJson " + json); } catch (Throwable ignored) {}
+        xlog("IceCam/Hook SurfaceOwnerJson " + json);
+        appendFile(SURFACE_OWNERSHIP_EVENTS, json + "\n");
+    }
+
+    private static String requestTargetsFromArgs(XC_MethodHook.MethodHookParam p) {
+        if (p == null || p.args == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < p.args.length; i++) {
+            Object a = p.args[i];
+            String t = requestTargetsFromObject(a);
+            if (t.length() > 0) {
+                if (sb.length() > 0) sb.append(" | ");
+                sb.append("arg").append(i).append('=').append(t);
+            }
+        }
+        return sb.toString();
+    }
+
+    private static String requestTargetsFromObject(Object o) {
+        try {
+            if (o == null) return "";
+            if (o instanceof CaptureRequest) {
+                java.util.Collection<Surface> targets = ((CaptureRequest)o).getTargets();
+                return surfaceCollectionDetails(targets);
+            }
+            if (o instanceof java.util.Collection) return surfaceCollectionDetails((java.util.Collection)o);
+            if (o.getClass().isArray()) {
+                int n = java.lang.reflect.Array.getLength(o);
+                StringBuilder sb = new StringBuilder("[");
+                for (int i=0; i<n; i++) { if (i>0) sb.append(','); sb.append(surfaceOrObjectDetails(java.lang.reflect.Array.get(o, i))); }
+                return sb.append(']').toString();
+            }
+            return "";
+        } catch (Throwable t) { return shortErr(t); }
+    }
+
+    private static String surfaceCollectionDetails(java.util.Collection c) {
+        if (c == null) return "null";
+        StringBuilder sb = new StringBuilder("[");
+        int i = 0;
+        for (Object o : c) { if (i++ > 0) sb.append(','); sb.append(surfaceOrObjectDetails(o)); }
+        return sb.append(']').toString();
+    }
+
+    private static String argsDetailed(Object[] args) {
+        if (args == null) return "null";
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < args.length; i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(i).append('=').append(surfaceOrObjectDetails(args[i]));
+        }
+        return sb.append(']').toString();
+    }
+
+    private static String surfaceOrObjectDetails(Object o) {
+        if (o == null) return "null";
+        try {
+            String base = objectId(o);
+            if (o instanceof Surface) {
+                return base + ":Surface:" + safeToString(o);
+            }
+            if (o instanceof CaptureRequest) {
+                return base + ":CaptureRequest targets=" + requestTargetsFromObject(o);
+            }
+            if (o instanceof java.util.Collection) {
+                return base + ":Collection" + requestTargetsFromObject(o);
+            }
+            String cn = o.getClass().getName();
+            if (cn.contains("ImageReader")) {
+                return base + ":" + cn + ":" + reflectNoArg(o, "getWidth") + "x" + reflectNoArg(o, "getHeight") + ":fmt=" + reflectNoArg(o, "getImageFormat");
+            }
+            return base;
+        } catch (Throwable t) { return objectId(o) + ":" + shortErr(t); }
+    }
+
+    private static String reflectNoArg(Object o, String method) {
+        try { return String.valueOf(o.getClass().getMethod(method).invoke(o)); }
+        catch (Throwable t) { return "?"; }
+    }
+
+    private static String safeToString(Object o) {
+        try { return String.valueOf(o); } catch (Throwable t) { return shortErr(t); }
     }
 
     private void hookCamera1(final XC_LoadPackage.LoadPackageParam lp) {
@@ -344,7 +490,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static String profileJson(XC_LoadPackage.LoadPackageParam lp, String id, CameraCharacteristics cc) {
         StringBuilder sb = new StringBuilder();
         sb.append('{');
-        field(sb, "version", "9.2-surface-trace", true);
+        field(sb, "version", "9.3-surface-ownership", true);
         field(sb, "ts", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()), false);
         field(sb, "package", lp.packageName, false);
         field(sb, "process", lp.processName, false);

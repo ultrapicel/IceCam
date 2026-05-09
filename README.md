@@ -1,95 +1,70 @@
-# IceCam v9.2 — Surface Trace Prep
+# IceCam v9.3 — Surface Ownership Mapping
 
-IceCam is an Android app + root module + LSPosed hook layer for research on camera API interception on rooted personal devices.
+`v9.3-surface-ownership` is still **passive telemetry only**. It does not inject frames and does not replace a camera stream yet.
 
-## Current stage
+This build moves from basic Surface tracing to ownership mapping:
 
-`v9.2-surface-trace` is still **passive telemetry only**. It does not inject frames and does not replace a real camera stream yet.
+- `CameraManager` / `CameraDevice` / `CameraCaptureSession` hooks remain active.
+- `CaptureRequest.Builder.addTarget/removeTarget/build` is traced.
+- `OutputConfiguration.addSurface/removeSurface/getSurfaces` is traced.
+- Surface ownership events are exported through logcat bridge.
+- Lite debug bundle stays small and includes only required development logs.
 
-What is implemented:
+## GitHub Actions artifacts
 
-- Android app UI with a guided 1→6 development flow.
-- Root control layer at `/data/adb/icecam/bin/icecamctl`.
-- LSPosed Camera1/Camera2 telemetry.
-- CameraCharacteristics profile cache through logcat bridge.
-- Capture session trace.
-- Surface/ImageReader/SurfaceTexture trace for media renderer preparation.
-- Lite debug bundle by default; full bundle only on explicit request.
-- GitHub Actions build for APK, root module, and source snapshot.
+The workflow produces:
 
-## Required files
-
-The project archive must contain:
-
-- `app/`
-- `module/`
-- `xposed_stub_src/`
-- `.github/workflows/build.yml`
-- `settings.gradle`
-- `build.gradle`
-- `README.md`
-
-No external Xposed Maven dependency is used. The workflow builds `app/libs/xposed-api-stub.jar` from `xposed_stub_src`.
-
-## Build
-
-Push this repository to GitHub and run **Build IceCam** from Actions.
-
-Artifacts:
-
-- `IceCam-app-v9.2.apk`
-- `IceCam-root-module-v9.2.zip`
-- `IceCam-source-snapshot-v9.2.zip`
-- `build-info-v9.2.txt`
+- `IceCam-app-v9.3.apk`
+- `IceCam-root-module-v9.3.zip`
+- `IceCam-source-snapshot-v9.3.zip`
+- `build-info-v9.3.txt`
 
 ## Install / test matrix
 
 | Component | Action |
 |---|---|
-| APK | update/install |
-| Root module | reinstall |
-| Reboot | required |
+| APK | Update/install |
+| Root module | Reinstall |
+| Reboot | Required |
 | LSPosed scope | Camera, Telegram, Chrome, target apps |
 
-## Development flow
+## Diagnostic flow
 
-In the app, use Dashboard steps:
+Use Dashboard steps:
 
-1. Request Root Check
+1. Root Check
 2. Prepare Hook Layer
-3. Select Photo/Video
+3. Select Photo or Video
 4. Start Replacement
-5. Open Target Camera
+5. Open target camera manually: Camera / Telegram / Chrome
 6. Export Lite Debug Bundle
 
-The file to send back for analysis is:
+Expected output:
 
-`/sdcard/Download/icecam_debug_v9.2_<timestamp>.tar.gz`
+`/sdcard/Download/icecam_debug_v9.3_<timestamp>.tar.gz`
 
-## Lite debug bundle contents
+Important files inside:
 
 - `summary.txt`
 - `icecam/logs/hook.log`
-- `icecam/logs/module.log`
-- `icecam/config/app_config.json`
-- `icecam/state/active`
-- `icecam/state/prepared`
 - `icecam/cache/camera_profiles_from_logcat.jsonl`
 - `icecam/cache/capture_session_events_from_logcat.jsonl`
 - `icecam/cache/surface_events_from_logcat.jsonl`
-- `icecam/cache/hook_access_probe_from_logcat.txt`
+- `icecam/cache/surface_ownership_from_logcat.jsonl`
 - `media/source.meta.json`
-- filtered logcat slices only
+- `logcat/icecam_camera_lsposed_filtered.txt`
 
-## Success criteria for v9.2
+## Success criteria for v9.3
 
-Expected telemetry:
+The bundle should show:
 
 - `[LOAD]`
-- `[Camera2] getCameraIdList`
-- `[Camera2] getCameraCharacteristics`
-- `[Camera2] openCamera`
-- `CaptureSessionJson`
+- `openCamera`
+- `getCameraCharacteristics`
+- `createCaptureSession`
+- `setRepeatingRequest` or `capture`
 - `SurfaceJson`
+- `SurfaceOwnerJson`
+- `CaptureRequest.Builder.addTarget` and/or `requestTargets`
 
-If these are present, the next step is `v9.3`: renderer-side source normalization and a controlled Surface mapping plan. Frame injection is still not enabled in v9.2.
+If these are present, the next stage is v9.4: internal renderer sandbox and placeholder frame producer. Frame injection remains disabled in v9.3.

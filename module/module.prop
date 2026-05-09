@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam v9.2 Surface Trace Prep Layer
-version=9.2-surface-trace
-versionCode=92
+name=IceCam v9.3 Surface Ownership Mapper
+version=9.3-surface-ownership
+versionCode=93
 author=IceCam
-summary=IceCam root control layer, LSPosed telemetry, and passive CameraCharacteristics profile cache, capture-session telemetry, and Surface trace
+summary=IceCam root control layer, LSPosed telemetry, CameraCharacteristics cache, capture-session trace, and Surface ownership mapping
