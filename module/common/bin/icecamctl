@@ -4,12 +4,29 @@ LOGS="$ICE/logs"
 CONFIG="$ICE/config"
 STATE="$ICE/state"
 MEDIA="$ICE/media"
-mkdir -p "$ICE/bin" "$LOGS" "$CONFIG" "$STATE" "$MEDIA"
+BIN="$ICE/bin"
+VERSION="v7"
+mkdir -p "$BIN" "$LOGS" "$CONFIG" "$STATE" "$MEDIA"
+touch "$LOGS/module.log" "$LOGS/hook.log"
 chmod 777 "$LOGS" 2>/dev/null
-now() { date '+%F %T'; }
+chmod 666 "$LOGS/module.log" "$LOGS/hook.log" 2>/dev/null
+[ -f "$STATE/active" ] || echo 0 > "$STATE/active"
+[ -f "$STATE/prepared" ] || echo 0 > "$STATE/prepared"
+chmod 666 "$STATE/active" "$STATE/prepared" 2>/dev/null
+[ -f "$CONFIG/app_config.json" ] || cat > "$CONFIG/app_config.json" <<EOF
+{
+  "version":"7.0-from-scratch",
+  "active":false,
+  "mode":"log-only",
+  "cameraMode":"auto",
+  "mediaType":"none",
+  "mediaPath":"/data/adb/icecam/media/source"
+}
+EOF
+chmod 666 "$CONFIG/app_config.json" 2>/dev/null
 case "$1" in
   status)
-    echo "IceCam status v0.6.1-dev"
+    echo "IceCam status"
     echo "uid=$(id)"
     echo "ctl=$0"
     echo "module_dir=$ICE"
@@ -17,34 +34,47 @@ case "$1" in
     echo "prepared=$(cat "$STATE/prepared" 2>/dev/null)"
     echo "media=$(ls -l "$MEDIA/source" 2>/dev/null)"
     echo "config=$(cat "$CONFIG/app_config.json" 2>/dev/null)"
+    echo "logs=$LOGS"
     ;;
   prepare-hooks)
-    echo "$(now) prepare-hooks requested v0.6.1-dev" >> "$LOGS/hook.log"
-    [ -f "$STATE/active" ] || echo 0 > "$STATE/active"
+    echo "$(date '+%F %T') prepare-hooks requested" >> "$LOGS/hook.log"
     echo 1 > "$STATE/prepared"
-    chmod 666 "$STATE/active" "$STATE/prepared" 2>/dev/null
-    echo "prepared hooks v6"
+    [ -f "$STATE/active" ] || echo 0 > "$STATE/active"
+    chmod 666 "$STATE/active" "$STATE/prepared" "$CONFIG/app_config.json" 2>/dev/null
+    echo "prepared hooks"
     ;;
   start)
     echo 1 > "$STATE/active"
-    chmod 666 "$STATE/active"
-    echo "$(now) replacement start requested" >> "$LOGS/hook.log"
+    chmod 666 "$STATE/active" 2>/dev/null
+    echo "$(date '+%F %T') replacement start requested" >> "$LOGS/hook.log"
     echo "replacement active"
     ;;
   stop)
     echo 0 > "$STATE/active"
-    chmod 666 "$STATE/active"
-    echo "$(now) replacement stop requested" >> "$LOGS/hook.log"
+    chmod 666 "$STATE/active" 2>/dev/null
+    echo "$(date '+%F %T') replacement stop requested" >> "$LOGS/hook.log"
     echo "replacement stopped"
     ;;
   logs)
-    OUT=/sdcard/Download/icecam_debug_v6_1.tar.gz
-    tar -czf "$OUT" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" 2>/dev/null
+    OUT=/sdcard/Download/icecam_debug_${VERSION}.tar.gz
+    TMP=/data/local/tmp/icecam_debug_${VERSION}
+    rm -rf "$TMP"; mkdir -p "$TMP"
+    cp -a "$LOGS" "$TMP/logs" 2>/dev/null
+    cp -a "$CONFIG" "$TMP/config" 2>/dev/null
+    cp -a "$STATE" "$TMP/state" 2>/dev/null
+    ls -l "$MEDIA" > "$TMP/media_listing.txt" 2>/dev/null
+    getprop > "$TMP/getprop.txt" 2>/dev/null
+    tar -czf "$OUT" -C "$TMP" . 2>/dev/null
     echo "exported $OUT"
     ;;
   clear-logs)
     rm -f "$LOGS"/*.log
+    touch "$LOGS/module.log" "$LOGS/hook.log"
+    chmod 666 "$LOGS"/*.log 2>/dev/null
     echo "logs cleared"
     ;;
-  *) echo "usage: icecamctl status|prepare-hooks|start|stop|logs|clear-logs"; exit 2 ;;
+  *)
+    echo "usage: icecamctl status|prepare-hooks|start|stop|logs|clear-logs"
+    exit 2
+    ;;
 esac

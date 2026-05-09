@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam
-version=v0.6.1-dev
-versionCode=61
+name=IceCam v7 Hook Layer
+version=7.0-from-scratch
+versionCode=7
 author=IceCam
-description=IceCam media preview and replacement state dev module
+summary=IceCam root control layer and LSPosed telemetry baseline

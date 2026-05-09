@@ -1,7 +1,9 @@
-name: Build IceCam v6.1
+name: Build IceCam v7
 on:
-  push:
   workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -10,34 +12,36 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
       - uses: android-actions/setup-android@v3
-      - name: Build Xposed API stub if missing
+      - name: Install Gradle 8.7
         run: |
-          if [ ! -f app/libs/xposed-api-stub.jar ]; then
-            mkdir -p xposed_stub_classes
-            javac -source 8 -target 8 -d xposed_stub_classes $(find xposed_stub_src -name '*.java')
-            jar cf app/libs/xposed-api-stub.jar -C xposed_stub_classes .
-          fi
-      - name: Install Gradle
+          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip -O gradle.zip
+          unzip -q gradle.zip
+          echo "$PWD/gradle-8.7/bin" >> $GITHUB_PATH
+      - name: Build local Xposed API stub jar
         run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip -O /tmp/gradle.zip
-          unzip -q /tmp/gradle.zip -d /tmp
-          echo "/tmp/gradle-8.7/bin" >> $GITHUB_PATH
+          rm -rf stub_classes
+          mkdir -p stub_classes app/libs
+          javac -d stub_classes $(find xposed_stub_src -name '*.java')
+          jar cf app/libs/xposed-api-stub.jar -C stub_classes .
       - name: Build APK
         run: gradle --no-daemon :app:assembleDebug
-      - name: Build root module ZIP
+      - name: Build root module zip
         run: |
           cd module
-          zip -r ../IceCam-root-module-v0.6.1-dev.zip ./*
-          cd ..
-      - name: Package artifacts
+          zip -r ../IceCam-root-module-v7.zip .
+      - name: Build source snapshot
         run: |
-          mkdir -p out
-          cp app/build/outputs/apk/debug/app-debug.apk out/IceCam-app-v0.6.1-dev.apk
-          cp IceCam-root-module-v0.6.1-dev.zip out/
-          zip -r out/IceCam-source-snapshot-v0.6.1-dev.zip . -x '.git/*' 'out/*'
+          zip -r IceCam-source-snapshot-v7.zip . -x "*.git*" -x "app/build/*" -x "gradle-8.7/*" -x "gradle.zip"
+      - name: Collect artifacts
+        run: |
+          mkdir -p artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk artifacts/IceCam-app-v7.apk
+          cp IceCam-root-module-v7.zip artifacts/
+          cp IceCam-source-snapshot-v7.zip artifacts/
+          printf "IceCam v7 build\ncommit=%s\ndate=%s\n" "$GITHUB_SHA" "$(date -u)" > artifacts/build-info.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: IceCam-v6.1-dev
-          path: out/*
+          name: IceCam-v7-from-scratch
+          path: artifacts/*

@@ -1,4 +1,18 @@
 plugins { id 'com.android.application' }
-android { namespace 'com.icecam.dev'; compileSdk 35
- defaultConfig { applicationId 'com.icecam.dev'; minSdk 23; targetSdk 35; versionCode 60; versionName '0.6.1-dev' } }
-dependencies { compileOnly files('libs/xposed-api-stub.jar') }
+
+android {
+    namespace 'com.icecam.dev'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.icecam.dev'
+        minSdk 31
+        targetSdk 35
+        versionCode 7
+        versionName '7.0-from-scratch'
+    }
+}
+
+dependencies {
+    compileOnly files('libs/xposed-api-stub.jar')
+}
