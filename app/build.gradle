@@ -8,8 +8,8 @@ android {
         applicationId 'com.icecam.dev'
         minSdk 31
         targetSdk 35
-        versionCode 7
-        versionName '7.0-from-scratch'
+        versionCode 9
+        versionName '7.2-lsposed-hookall-fix'
     }
 }
 
