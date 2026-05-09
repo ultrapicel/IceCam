@@ -1,4 +1,4 @@
-# IceCam v1 dev
+# IceCam v1.1 dev
 
 IceCam is a research/development project for Android camera replacement on rooted devices.
 
@@ -6,8 +6,8 @@ IceCam is a research/development project for Android camera replacement on roote
 
 GitHub Actions produces:
 
-- `IceCam-app-v0.1.0-dev.apk`
-- `IceCam-root-module-v0.1.0-dev.zip`
+- `IceCam-app-v0.1.1-dev.apk`
+- `IceCam-root-module-v0.1.1-dev.zip`
 - `IceCam-source-snapshot.zip`
 
 ## Current v1 scope

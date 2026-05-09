@@ -12,19 +12,20 @@ import android.view.View;
 import android.widget.*;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends Activity {
     private LinearLayout logBox;
 
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
-        IceLog.i("App", "IceCam v1 dev start");
+        IceLog.i("App", "IceCam v1.1 dev start");
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.CAMERA, Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO}, 100);
         }
         setContentView(buildUi());
         dumpCameraInfo();
-        checkRoot();
+        appendLog("Root check: press REQUEST ROOT CHECK");
     }
 
     private View buildUi() {
@@ -38,18 +39,28 @@ public class MainActivity extends Activity {
         TextView title = tv("IceCam", 34, true);
         TextView sub = tv("System camera replacement dev build", 15, false);
         ll.addView(title); ll.addView(sub);
-        ll.addView(card("Status", "Mode: DEV\nRoot module: pending check\nHooks: LSPosed/Zygisk skeleton\nCamera path: Camera1/Camera2/CameraX/NDK planned"));
+        ll.addView(card("Status", "Mode: DEV v1.1\nRoot module: explicit check required\nHooks: LSPosed/Zygisk skeleton\nCamera path: Camera1/Camera2/CameraX/NDK planned"));
         ll.addView(card("Source", "Media input: placeholder\nBack camera profile: auto-copy\nFront camera profile: auto-copy\nStream engine: MediaCodec/OpenGL planned"));
 
-        Button export = new Button(this);
-        export.setText("Export Debug Bundle");
-        export.setOnClickListener(v -> { IceLog.i("App", "Export debug requested"); appendLog("Logs: /sdcard/Download/IceCamLogs/icecam_app.log"); });
+        Button rootCheck = button("Request Root Check");
+        rootCheck.setOnClickListener(v -> checkRootAndModule());
+        ll.addView(rootCheck);
+
+        Button export = button("Export Debug Bundle");
+        export.setOnClickListener(v -> exportDebugBundle());
         ll.addView(export);
 
         logBox = new LinearLayout(this);
         logBox.setOrientation(LinearLayout.VERTICAL);
         ll.addView(cardView("Diagnostics", logBox));
         return root;
+    }
+
+    private Button button(String label) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setAllCaps(false);
+        return b;
     }
 
     private TextView tv(String s, int sp, boolean bold) {
@@ -72,11 +83,67 @@ public class MainActivity extends Activity {
         } catch (Throwable t) { IceLog.e("Camera2", "Camera dump failed", t); appendLog("Camera dump failed: " + t.getClass().getSimpleName()); }
     }
 
-    private void checkRoot() {
+    private void checkRootAndModule() {
+        appendLog("Root request: executing su -c id");
+        ShellResult id = runShell(new String[]{"su", "-c", "id"}, 8000);
+        appendLog("Root exit=" + id.exitCode + " timeout=" + id.timeout);
+        appendLog("Root stdout: " + safeOneLine(id.stdout));
+        if (id.stderr.length() > 0) appendLog("Root stderr: " + safeOneLine(id.stderr));
+
+        ShellResult module = runShell(new String[]{"su", "-c", "if [ -d /data/adb/icecam/logs ]; then echo MODULE_OK; ls -la /data/adb/icecam/logs; else echo MODULE_MISSING; fi"}, 8000);
+        appendLog("Module exit=" + module.exitCode + " timeout=" + module.timeout);
+        appendLog("Module stdout: " + safeOneLine(module.stdout));
+        if (module.stderr.length() > 0) appendLog("Module stderr: " + safeOneLine(module.stderr));
+    }
+
+    private void exportDebugBundle() {
+        IceLog.i("App", "Export debug requested");
+        ShellResult r = runShell(new String[]{"su", "-c", "icecamctl logs"}, 12000);
+        appendLog("Export exit=" + r.exitCode + " timeout=" + r.timeout);
+        appendLog("Export stdout: " + safeOneLine(r.stdout));
+        if (r.stderr.length() > 0) appendLog("Export stderr: " + safeOneLine(r.stderr));
+        appendLog("App log: /sdcard/Download/IceCamLogs/icecam_app.log");
+    }
+
+    private static String safeOneLine(String s) {
+        if (s == null || s.trim().isEmpty()) return "<empty>";
+        return s.replace('\n', ' ').replace('\r', ' ').trim();
+    }
+
+    private ShellResult runShell(String[] cmd, long timeoutMs) {
+        ShellResult result = new ShellResult();
         try {
-            Process p = Runtime.getRuntime().exec(new String[]{"su","-c","id"});
-            BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
-            String line = br.readLine(); appendLog("Root check: " + line);
-        } catch (Throwable t) { appendLog("Root check failed: " + t.getClass().getSimpleName()); }
+            Process p = Runtime.getRuntime().exec(cmd);
+            boolean done = p.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
+            if (!done) {
+                result.timeout = true;
+                p.destroyForcibly();
+                result.exitCode = -999;
+            } else {
+                result.exitCode = p.exitValue();
+            }
+            result.stdout = readAll(p.getInputStream());
+            result.stderr = readAll(p.getErrorStream());
+        } catch (Throwable t) {
+            result.exitCode = -998;
+            result.stderr = t.getClass().getSimpleName() + ": " + t.getMessage();
+            IceLog.e("Root", "Shell command failed", t);
+        }
+        return result;
+    }
+
+    private String readAll(java.io.InputStream is) throws Exception {
+        BufferedReader br = new BufferedReader(new InputStreamReader(is));
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while ((line = br.readLine()) != null) sb.append(line).append('\n');
+        return sb.toString();
+    }
+
+    private static final class ShellResult {
+        int exitCode = -1;
+        boolean timeout = false;
+        String stdout = "";
+        String stderr = "";
     }
 }
