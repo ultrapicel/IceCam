@@ -1,8 +1,8 @@
-# IceCam v5.1 dev
+# IceCam v6 dev
 
-UI rebuild release.
+Media preview + replacement state release.
 
-For v5.1:
+For v6:
 
 ```text
 APK: update
@@ -11,8 +11,16 @@ Reboot: required
 LSPosed scope: target apps
 ```
 
-Changes:
-- Compact tabbed UI
-- Restored Root / Logs / Hooks / Media / Diagnostics sections
-- Fixed stretched one-page layout
-- Kept v5 hook/config logic
+Added:
+- Select Photo
+- Select Video
+- Image preview
+- Video preview
+- Start Replacement
+- Stop Replacement
+- active state: /data/adb/icecam/state/active
+- working media copy: /data/adb/icecam/media/source
+- hook logs active/mode/mediaPath when target opens camera
+
+Limitation:
+- v6 still does not inject frames into CameraDevice output. It prepares active media state and verifies hook interception.
