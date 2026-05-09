@@ -1,6 +1,6 @@
 id=icecam
 name=IceCam
-version=v0.6.0-dev
-versionCode=60
+version=v0.6.1-dev
+versionCode=61
 author=IceCam
 description=IceCam media preview and replacement state dev module

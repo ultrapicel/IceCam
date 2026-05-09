@@ -24,3 +24,6 @@ Added:
 
 Limitation:
 - v6 still does not inject frames into CameraDevice output. It prepares active media state and verifies hook interception.
+
+
+v6.1: Export Debug Bundle button restored on Dashboard / Root / Media / Logs.

@@ -53,7 +53,7 @@ public class MainActivity extends Activity {
         setContentView(root);
 
         root.addView(tv("IceCam", 38, TXT));
-        root.addView(tv("v6 dev · media preview + replacement state", 16, MUTED));
+        root.addView(tv("v6.1 dev · media preview + replacement state", 16, MUTED));
         status = card("Status: " + (replacementActive ? "replacement active" : "idle"));
         root.addView(status, new LinearLayout.LayoutParams(-1, -2));
 
@@ -101,6 +101,7 @@ public class MainActivity extends Activity {
         addButton(main, "Start Replacement", v -> startReplacement());
         addButton(main, "Stop Replacement", v -> stopReplacement());
         addButton(main, "Write Config + Prepare Hooks", v -> { writeAppConfig(); runCtl("prepare-hooks"); });
+        addButton(main, "Export Debug Bundle", v -> runCtl("logs"));
     }
 
     private void drawRoot() {
@@ -108,6 +109,7 @@ public class MainActivity extends Activity {
         addButton(main, "Request Root Check", v -> runCtl("status"));
         addButton(main, "Prepare Hook Layer", v -> { writeAppConfig(); runCtl("prepare-hooks"); });
         addButton(main, "Clear Logs", v -> runCtl("clear-logs"));
+        addButton(main, "Export Debug Bundle", v -> runCtl("logs"));
         main.addView(info("Control path", ctl));
         main.addView(info("Module path", "/data/adb/icecam"));
     }
@@ -139,6 +141,7 @@ public class MainActivity extends Activity {
 
         main.addView(info("Selected media", mediaUri == null ? "none" : mediaUri.toString()));
         main.addView(info("Working copy", "/data/adb/icecam/media/source"));
+        addButton(main, "Export Debug Bundle", v -> runCtl("logs"));
     }
 
     private void drawPreview() {
@@ -264,7 +267,7 @@ public class MainActivity extends Activity {
 
     private void writeAppConfig(){
         String media=mediaUri==null?"":mediaUri.toString();
-        String json="{\"enabled\":true,\"version\":\"0.6.0-dev\",\"active\":"+replacementActive+",\"mode\":\""+mode+"\",\"cameraMode\":\""+cameraMode+"\",\"mediaType\":\""+mediaType+"\",\"mediaUri\":\""+esc(media)+"\",\"mediaPath\":\"/data/adb/icecam/media/source\",\"mirror\":"+mirror+",\"loop\":"+loop+",\"scale\":"+scale+",\"rotation\":"+rotation+"}";
+        String json="{\"enabled\":true,\"version\":\"0.6.1-dev\",\"active\":"+replacementActive+",\"mode\":\""+mode+"\",\"cameraMode\":\""+cameraMode+"\",\"mediaType\":\""+mediaType+"\",\"mediaUri\":\""+esc(media)+"\",\"mediaPath\":\"/data/adb/icecam/media/source\",\"mirror\":"+mirror+",\"loop\":"+loop+",\"scale\":"+scale+",\"rotation\":"+rotation+"}";
         String encoded=Base64.getEncoder().encodeToString(json.getBytes());
         execRoot("mkdir -p /data/adb/icecam/config /data/adb/icecam/state && echo "+encoded+" | base64 -d > /data/adb/icecam/config/app_config.json && echo "+(replacementActive?"1":"0")+" > /data/adb/icecam/state/active && chmod 666 /data/adb/icecam/config/app_config.json /data/adb/icecam/state/active");
     }
