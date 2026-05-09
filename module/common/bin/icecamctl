@@ -6,28 +6,30 @@ STATE="$ICE/state"
 MEDIA="$ICE/media"
 CACHE="$ICE/cache"
 BIN="$ICE/bin"
-VERSION="v8.1"
+VERSION="v9.2"
 APP_PKG="com.icecam.dev"
 TARGETS="com.android.camera com.android.chrome org.telegram.messenger org.telegram.messenger.web"
 
 init_dirs() {
   mkdir -p "$BIN" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE"
-  touch "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log"
+  touch "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl"
   chmod 755 /data/adb 2>/dev/null
   chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
-  chmod 666 "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" 2>/dev/null
+  chmod 666 "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" 2>/dev/null
   [ -f "$STATE/active" ] || echo 0 > "$STATE/active"
   [ -f "$STATE/prepared" ] || echo 0 > "$STATE/prepared"
   chmod 666 "$STATE/active" "$STATE/prepared" 2>/dev/null
   [ -f "$CONFIG/app_config.json" ] || cat > "$CONFIG/app_config.json" <<JSON
 {
-  "version":"8.1-logcat-profile-bridge",
+  "version":"9.2-surface-trace",
   "active":false,
   "mode":"log-only",
   "cameraMode":"auto",
   "compatibilityMode":"strict-real",
   "mediaType":"none",
-  "mediaPath":"/data/adb/icecam/media/source"
+  "mediaPath":"/data/adb/icecam/media/source",
+  "mediaMetaPath":"/data/adb/icecam/media/source.meta.json",
+  "pipelineStage":"media-prep"
 }
 JSON
   chmod 666 "$CONFIG/app_config.json" 2>/dev/null
@@ -58,85 +60,130 @@ append_cmd() {
   } >> "$OUTFILE" 2>&1
 }
 
-collect_debug_bundle() {
+collect_lite_debug_bundle() {
   TS=$(date '+%Y%m%d_%H%M%S' 2>/dev/null)
   [ -n "$TS" ] || TS=now
   OUT=/sdcard/Download/icecam_debug_${VERSION}_${TS}.tar.gz
   TMP=/data/local/tmp/icecam_debug_${VERSION}_${TS}
   rm -rf "$TMP"
-  mkdir -p "$TMP" "$TMP/icecam" "$TMP/icecam/cache" "$TMP/lsposed" "$TMP/system" "$TMP/packages" "$TMP/camera" "$TMP/logcat" "$TMP/media"
+  mkdir -p "$TMP" "$TMP/icecam/logs" "$TMP/icecam/config" "$TMP/icecam/state" "$TMP/icecam/cache" "$TMP/media" "$TMP/logcat" "$TMP/system" "$TMP/camera" "$TMP/packages"
 
-  echo "IceCam debug bundle $VERSION" > "$TMP/README.txt"
+  FILTER_RE='IceCam|IceCam/Hook|ProfileCacheJson|CaptureSessionJson|AccessProbe|LSPosed|Xposed|CameraManager|CameraDevice|CameraCaptureSession|CameraService|CameraProvider|android.hardware.Camera|openCamera|getCameraIdList|getCameraCharacteristics|createCaptureSession|createCaptureRequest|SurfaceJson|SurfaceTexture|ImageReader|android.view.Surface'
+
+  echo "IceCam lite debug bundle $VERSION" > "$TMP/summary.txt"
+  echo "created=$(date '+%F %T')" >> "$TMP/summary.txt"
+  echo "device=$(getprop ro.product.manufacturer 2>/dev/null) $(getprop ro.product.model 2>/dev/null) / $(getprop ro.product.device 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "sdk=$(getprop ro.build.version.sdk 2>/dev/null) android=$(getprop ro.build.version.release 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "uid=$(id)" >> "$TMP/summary.txt" 2>&1
+  echo "active=$(cat "$STATE/active" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "prepared=$(cat "$STATE/prepared" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "media_source_exists=$([ -e "$MEDIA/source" ] && echo yes || echo no)" >> "$TMP/summary.txt"
+  echo "config_exists=$([ -e "$CONFIG/app_config.json" ] && echo yes || echo no)" >> "$TMP/summary.txt"
+  echo "cache_dir=$CACHE" >> "$TMP/summary.txt"
+
+  cp "$LOGS/hook.log" "$TMP/icecam/logs/hook.log" 2>/dev/null
+  cp "$LOGS/module.log" "$TMP/icecam/logs/module.log" 2>/dev/null
+  cp "$CONFIG/app_config.json" "$TMP/icecam/config/app_config.json" 2>/dev/null
+  cp "$STATE/active" "$TMP/icecam/state/active" 2>/dev/null
+  cp "$STATE/prepared" "$TMP/icecam/state/prepared" 2>/dev/null
+  cp "$CACHE/camera_profiles.json" "$TMP/icecam/cache/camera_profiles.json" 2>/dev/null
+  cp "$CACHE/camera_profiles.jsonl" "$TMP/icecam/cache/camera_profiles.jsonl" 2>/dev/null
+  cp "$CACHE/hook_access_probe.log" "$TMP/icecam/cache/hook_access_probe.log" 2>/dev/null
+  cp "$CACHE/capture_session_events.jsonl" "$TMP/icecam/cache/capture_session_events.jsonl" 2>/dev/null
+  cp "$CACHE/surface_events.jsonl" "$TMP/icecam/cache/surface_events.jsonl" 2>/dev/null
+
+  ls -laR "$ICE" > "$TMP/icecam/tree.txt" 2>&1
+  { ls -ld /data/adb "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE"; ls -l "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE"; } > "$TMP/icecam/permissions.txt" 2>&1
+
+  ls -la "$MEDIA" > "$TMP/media/media_listing.txt" 2>&1
+  [ -e "$MEDIA/source" ] && ls -lZ "$MEDIA/source" > "$TMP/media/source_stat.txt" 2>&1
+  [ -e "$MEDIA/source" ] && { wc -c "$MEDIA/source"; md5sum "$MEDIA/source" 2>/dev/null; sha256sum "$MEDIA/source" 2>/dev/null; } > "$TMP/media/source_hashes.txt" 2>&1
+  [ -e "$MEDIA/source.meta.json" ] && cp "$MEDIA/source.meta.json" "$TMP/media/source.meta.json" 2>/dev/null
+
+  logcat -d -v threadtime | grep -E "$FILTER_RE" | tail -n 2500 > "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>&1
+  grep -E 'IceCam|IceCam/Hook|ProfileCacheJson|CaptureSessionJson|AccessProbe' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" > "$TMP/logcat/icecam_only.txt" 2>/dev/null
+  grep -E 'LSPosed|Xposed' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" > "$TMP/logcat/lsposed_only.txt" 2>/dev/null
+  grep -E 'CameraManager|CameraDevice|CameraCaptureSession|CameraService|CameraProvider|android.hardware.Camera|openCamera|getCameraIdList|getCameraCharacteristics|createCaptureSession|createCaptureRequest|SurfaceJson|SurfaceTexture|ImageReader|android.view.Surface' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" > "$TMP/logcat/camera_only.txt" 2>/dev/null
+  grep 'ProfileCacheJson' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" | sed 's/^.*ProfileCacheJson //' > "$TMP/icecam/cache/camera_profiles_from_logcat.jsonl" 2>/dev/null
+  grep 'CaptureSessionJson' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" | sed 's/^.*CaptureSessionJson //' > "$TMP/icecam/cache/capture_session_events_from_logcat.jsonl" 2>/dev/null
+  grep 'SurfaceJson' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" | sed 's/^.*SurfaceJson //' > "$TMP/icecam/cache/surface_events_from_logcat.jsonl" 2>/dev/null
+  grep 'AccessProbe' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" > "$TMP/icecam/cache/hook_access_probe_from_logcat.txt" 2>/dev/null
+  logcat -b crash -d -v threadtime | grep -E 'IceCam|LSPosed|Xposed|Camera|android.hardware.camera|org.telegram|chrome' | tail -n 500 > "$TMP/logcat/crash_filtered.txt" 2>&1
+
+  getprop | grep -Ei 'camera|vendor.camera|product|device|build.version|zygote|dalvik|ro.boot' > "$TMP/system/getprop_relevant.txt" 2>&1
+  ps -A | grep -Ei 'camera|telegram|chrome|icecam|lspd|zygote' > "$TMP/system/ps_relevant.txt" 2>&1
+  cmd activity processes | grep -Ei 'camera|telegram|chrome|icecam|lspd' > "$TMP/system/activity_processes_relevant.txt" 2>&1
+
+  dumpsys media.camera > "$TMP/camera/dumpsys_media_camera.txt" 2>&1
+  service list | grep -i camera > "$TMP/camera/service_list_camera.txt" 2>&1
+  cmd media.camera get-camera-ids > "$TMP/camera/cmd_media_camera_ids.txt" 2>&1
+
+  cmd package path "$APP_PKG" > "$TMP/packages/${APP_PKG}_path.txt" 2>&1
+  dumpsys package "$APP_PKG" | grep -Ei 'Package \[|versionName|versionCode|codePath|resourcePath|legacy|xposed|requested permissions|granted=true' > "$TMP/packages/${APP_PKG}_summary.txt" 2>&1
+  APK_PATH=$(cmd package path "$APP_PKG" 2>/dev/null | head -n 1 | sed 's/package://')
+  echo "$APK_PATH" > "$TMP/packages/${APP_PKG}_base_apk_path.txt"
+  if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
+    unzip -p "$APK_PATH" assets/xposed_init > "$TMP/packages/${APP_PKG}_xposed_init.txt" 2>&1
+    unzip -l "$APK_PATH" | grep -E 'xposed_init|IceCamHook|AndroidManifest' > "$TMP/packages/${APP_PKG}_apk_key_entries.txt" 2>&1
+  fi
+
+  for P in $TARGETS; do
+    SAFE=$(echo "$P" | tr '.:' '__')
+    cmd package path "$P" > "$TMP/packages/${SAFE}_path.txt" 2>&1
+    appops get "$P" | grep -Ei 'CAMERA|RECORD_AUDIO|RUN_IN_BACKGROUND|SYSTEM_ALERT' > "$TMP/packages/${SAFE}_appops_camera.txt" 2>&1
+  done
+
+  echo "" >> "$TMP/summary.txt"
+  echo "Key counters:" >> "$TMP/summary.txt"
+  echo "load_count=$(grep -c '\[LOAD\]' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "openCamera_count=$(grep -c 'openCamera' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "getCameraIdList_count=$(grep -c 'getCameraIdList' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "getCameraCharacteristics_count=$(grep -c 'getCameraCharacteristics' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "captureSession_count=$(grep -c 'CaptureSessionJson\|createCaptureSession' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "profile_json_count=$(wc -l < "$TMP/icecam/cache/camera_profiles_from_logcat.jsonl" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "surface_json_count=$(wc -l < "$TMP/icecam/cache/surface_events_from_logcat.jsonl" 2>/dev/null)" >> "$TMP/summary.txt"
+
+  find "$TMP" -type f -size +800k -exec sh -c 'tail -c 800000 "$1" > "$1.trim" && mv "$1.trim" "$1"' _ {} \; 2>/dev/null
+  tar -czf "$OUT" -C "$TMP" . 2>/dev/null
+  chmod 666 "$OUT" 2>/dev/null
+  echo "exported lite $OUT"
+  echo "include this file in ChatGPT: $OUT"
+}
+
+collect_full_debug_bundle() {
+  TS=$(date '+%Y%m%d_%H%M%S' 2>/dev/null)
+  [ -n "$TS" ] || TS=now
+  OUT=/sdcard/Download/icecam_full_debug_${VERSION}_${TS}.tar.gz
+  TMP=/data/local/tmp/icecam_full_debug_${VERSION}_${TS}
+  rm -rf "$TMP"
+  mkdir -p "$TMP" "$TMP/icecam" "$TMP/lsposed" "$TMP/system" "$TMP/packages" "$TMP/camera" "$TMP/logcat" "$TMP/media"
+  echo "IceCam FULL debug bundle $VERSION" > "$TMP/README.txt"
   echo "created=$(date '+%F %T')" >> "$TMP/README.txt"
-  echo "device=$(getprop ro.product.manufacturer 2>/dev/null) $(getprop ro.product.model 2>/dev/null) / $(getprop ro.product.device 2>/dev/null)" >> "$TMP/README.txt"
-  echo "sdk=$(getprop ro.build.version.sdk 2>/dev/null) android=$(getprop ro.build.version.release 2>/dev/null)" >> "$TMP/README.txt"
-  echo "app=$APP_PKG" >> "$TMP/README.txt"
-  echo "targets=$TARGETS" >> "$TMP/README.txt"
-  echo "ctl=$0" >> "$TMP/README.txt"
-  echo "uid=$(id)" >> "$TMP/README.txt" 2>&1
-
   cp -a "$LOGS" "$TMP/icecam/logs" 2>/dev/null
   cp -a "$CONFIG" "$TMP/icecam/config" 2>/dev/null
   cp -a "$STATE" "$TMP/icecam/state" 2>/dev/null
   cp -a "$CACHE" "$TMP/icecam/cache" 2>/dev/null
-  ls -laR "$ICE" > "$TMP/icecam/tree.txt" 2>&1
-  { ls -ld /data /data/adb "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE"; ls -l "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE"; } > "$TMP/icecam/permissions.txt" 2>&1
-  ls -la "$MEDIA" > "$TMP/media/media_listing.txt" 2>&1
-  [ -e "$MEDIA/source" ] && ls -lZ "$MEDIA/source" > "$TMP/media/source_stat.txt" 2>&1
-
-  # LSPosed runtime logs and config traces. Missing paths are recorded instead of failing.
-  ls -laR /data/adb/lspd > "$TMP/lsposed/lspd_tree.txt" 2>&1
+  cp -a "$MEDIA" "$TMP/icecam/media" 2>/dev/null
   cp -a /data/adb/lspd/log "$TMP/lsposed/log" 2>/dev/null
-  cp -a /data/adb/lspd/config "$TMP/lsposed/config" 2>/dev/null
-  cp -a /data/adb/modules/zygisk_lsposed "$TMP/lsposed/zygisk_lsposed_module" 2>/dev/null
-  cp -a /data/adb/modules/riru_lsposed "$TMP/lsposed/riru_lsposed_module" 2>/dev/null
-
   getprop > "$TMP/system/getprop.txt" 2>&1
   ps -A > "$TMP/system/ps_A.txt" 2>&1
-  mount > "$TMP/system/mount.txt" 2>&1
-  uname -a > "$TMP/system/uname.txt" 2>&1
   cmd activity processes > "$TMP/system/activity_processes.txt" 2>&1
-  dumpsys activity processes > "$TMP/system/dumpsys_activity_processes.txt" 2>&1
-  dumpsys SurfaceFlinger --list > "$TMP/system/surfaceflinger_list.txt" 2>&1
-
   logcat -d -v threadtime > "$TMP/logcat/logcat_full.txt" 2>&1
   logcat -d -v threadtime | grep -E 'IceCam|LSPosed|Xposed|CameraManager|Camera2|CameraService|CameraProvider|android.hardware.Camera|chrom|telegram|camera' > "$TMP/logcat/logcat_filtered.txt" 2>&1
-  grep 'ProfileCacheJson' "$TMP/logcat/logcat_filtered.txt" | sed 's/^.*ProfileCacheJson //' > "$TMP/icecam/cache/camera_profiles_from_logcat.jsonl" 2>/dev/null
-  grep 'AccessProbe' "$TMP/logcat/logcat_filtered.txt" > "$TMP/icecam/cache/hook_access_probe_from_logcat.txt" 2>/dev/null
   logcat -b crash -d -v threadtime > "$TMP/logcat/logcat_crash.txt" 2>&1
   dmesg > "$TMP/logcat/dmesg.txt" 2>&1
-  cat /proc/last_kmsg > "$TMP/logcat/last_kmsg.txt" 2>&1
-
   dumpsys media.camera > "$TMP/camera/dumpsys_media_camera.txt" 2>&1
-  dumpsys media.camera.proxy > "$TMP/camera/dumpsys_media_camera_proxy.txt" 2>&1
   dumpsys camera > "$TMP/camera/dumpsys_camera.txt" 2>&1
-  service list | grep -i camera > "$TMP/camera/service_list_camera.txt" 2>&1
-  cmd media.camera get-camera-ids > "$TMP/camera/cmd_media_camera_ids.txt" 2>&1
-
   cmd package list packages > "$TMP/packages/package_list.txt" 2>&1
-  cmd package path "$APP_PKG" > "$TMP/packages/${APP_PKG}_path.txt" 2>&1
-  dumpsys package "$APP_PKG" > "$TMP/packages/${APP_PKG}_dumpsys.txt" 2>&1
-  appops get "$APP_PKG" > "$TMP/packages/${APP_PKG}_appops.txt" 2>&1
-  for P in $TARGETS; do
+  for P in $APP_PKG $TARGETS; do
     SAFE=$(echo "$P" | tr '.:' '__')
     cmd package path "$P" > "$TMP/packages/${SAFE}_path.txt" 2>&1
     dumpsys package "$P" > "$TMP/packages/${SAFE}_dumpsys.txt" 2>&1
     appops get "$P" > "$TMP/packages/${SAFE}_appops.txt" 2>&1
   done
-
-  # Verify installed APK contains Xposed marker when unzip is available.
-  APK_PATH=$(cmd package path "$APP_PKG" 2>/dev/null | head -n 1 | sed 's/package://')
-  echo "$APK_PATH" > "$TMP/packages/${APP_PKG}_base_apk_path.txt"
-  if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
-    ls -lZ "$APK_PATH" > "$TMP/packages/${APP_PKG}_base_apk_stat.txt" 2>&1
-    unzip -l "$APK_PATH" > "$TMP/packages/${APP_PKG}_apk_unzip_list.txt" 2>&1
-    unzip -p "$APK_PATH" assets/xposed_init > "$TMP/packages/${APP_PKG}_xposed_init.txt" 2>&1
-  fi
-
   tar -czf "$OUT" -C "$TMP" . 2>/dev/null
   chmod 666 "$OUT" 2>/dev/null
-  echo "exported $OUT"
-  echo "include this file in ChatGPT: $OUT"
+  echo "exported full $OUT"
 }
 
 init_dirs
@@ -161,14 +208,14 @@ case "$1" in
     [ -f "$STATE/active" ] || echo 0 > "$STATE/active"
     chmod 755 /data/adb 2>/dev/null
     chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
-    chmod 666 "$STATE/active" "$STATE/prepared" "$CONFIG/app_config.json" "$LOGS/hook.log" "$LOGS/module.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" 2>/dev/null
+    chmod 666 "$STATE/active" "$STATE/prepared" "$CONFIG/app_config.json" "$LOGS/hook.log" "$LOGS/module.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" 2>/dev/null
     echo "prepared hooks"
     ;;
   start)
     echo 1 > "$STATE/active"
     chmod 666 "$STATE/active" 2>/dev/null
     chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
-    chmod 666 "$LOGS/hook.log" "$CONFIG/app_config.json" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" 2>/dev/null
+    chmod 666 "$LOGS/hook.log" "$CONFIG/app_config.json" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" 2>/dev/null
     echo "$(date '+%F %T') replacement start requested" >> "$LOGS/hook.log"
     echo "replacement active"
     ;;
@@ -176,22 +223,25 @@ case "$1" in
     echo 0 > "$STATE/active"
     chmod 666 "$STATE/active" 2>/dev/null
     chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
-    chmod 666 "$LOGS/hook.log" "$CONFIG/app_config.json" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" 2>/dev/null
+    chmod 666 "$LOGS/hook.log" "$CONFIG/app_config.json" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" 2>/dev/null
     echo "$(date '+%F %T') replacement stop requested" >> "$LOGS/hook.log"
     echo "replacement stopped"
     ;;
-  logs|debug-bundle)
-    collect_debug_bundle
+  logs|debug-bundle|lite-logs)
+    collect_lite_debug_bundle
+    ;;
+  full-logs|full-debug-bundle)
+    collect_full_debug_bundle
     ;;
   clear-logs)
     rm -f "$LOGS"/*.log
-    touch "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log"
+    touch "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl"
     chmod 666 "$LOGS"/*.log 2>/dev/null
     logcat -c 2>/dev/null
     echo "logs cleared"
     ;;
   *)
-    echo "usage: icecamctl status|prepare-hooks|start|stop|logs|debug-bundle|clear-logs"
+    echo "usage: icecamctl status|prepare-hooks|start|stop|logs|lite-logs|full-logs|clear-logs"
     exit 2
     ;;
 esac

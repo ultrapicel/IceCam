@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam v8.1 Profile Clone Layer
-version=8.1-logcat-profile-bridge
-versionCode=9
+name=IceCam v9.2 Surface Trace Prep Layer
+version=9.2-surface-trace
+versionCode=92
 author=IceCam
-summary=IceCam root control layer, LSPosed telemetry, and passive CameraCharacteristics profile cache
+summary=IceCam root control layer, LSPosed telemetry, and passive CameraCharacteristics profile cache, capture-session telemetry, and Surface trace
