@@ -37,17 +37,17 @@ jobs:
       - name: Build root module ZIP
         run: |
           cd module
-          zip -r ../IceCam-root-module-v0.5.0-dev.zip ./*
+          zip -r ../IceCam-root-module-v0.5.1-dev.zip ./*
           cd ..
 
       - name: Package artifacts
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/debug/app-debug.apk out/IceCam-app-v0.5.0-dev.apk
-          cp IceCam-root-module-v0.5.0-dev.zip out/
-          zip -r out/IceCam-source-snapshot-v0.5.0-dev.zip . -x '.git/*' 'out/*'
+          cp app/build/outputs/apk/debug/app-debug.apk out/IceCam-app-v0.5.1-dev.apk
+          cp IceCam-root-module-v0.5.1-dev.zip out/
+          zip -r out/IceCam-source-snapshot-v0.5.1-dev.zip . -x '.git/*' 'out/*'
 
       - uses: actions/upload-artifact@v4
         with:
-          name: IceCam-v5-dev
+          name: IceCam-v5.0.1-dev
           path: out/*

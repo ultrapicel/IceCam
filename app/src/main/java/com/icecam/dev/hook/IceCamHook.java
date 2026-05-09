@@ -1,4 +1,3 @@
-\
 package com.icecam.dev.hook;
 
 import android.util.Log;

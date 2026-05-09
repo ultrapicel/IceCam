@@ -1,6 +1,6 @@
 id=icecam
 name=IceCam
-version=v0.5.0-dev
-versionCode=50
+version=v0.5.1-dev
+versionCode=51
 author=IceCam
 description=IceCam system camera replacement dev module

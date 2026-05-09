@@ -10,7 +10,7 @@ now() { date '+%F %T'; }
 
 case "$1" in
   status)
-    echo "IceCam status v0.5.0-dev"
+    echo "IceCam status v0.5.1-dev"
     echo "uid=$(id)"
     echo "ctl=$0"
     echo "module_dir=$ICE"
@@ -18,14 +18,14 @@ case "$1" in
     echo "config=$(cat "$CONFIG/app_config.json" 2>/dev/null)"
     ;;
   prepare-hooks)
-    echo "$(now) prepare-hooks requested v0.5.0-dev" >> "$LOGS/hook.log"
+    echo "$(now) prepare-hooks requested v0.5.1-dev" >> "$LOGS/hook.log"
     if [ ! -f "$CONFIG/app_config.json" ]; then
       cat > "$CONFIG/app_config.json" <<EOF
-{"enabled":true,"version":"0.5.0-dev","mode":"log-only","cameraMode":"auto","mediaUri":"","mirror":false,"scale":1.0,"rotation":0.0}
+{"enabled":true,"version":"0.5.1-dev","mode":"log-only","cameraMode":"auto","mediaUri":"","mirror":false,"scale":1.0,"rotation":0.0}
 EOF
     fi
     cat > "$CONFIG/hook_config.json" <<EOF
-{"enabled":true,"version":"0.5.0-dev","targets":["camera1","camera2"],"notes":"v5 hook telemetry and injection contract"}
+{"enabled":true,"version":"0.5.1-dev","targets":["camera1","camera2"],"notes":"v5 hook telemetry and injection contract"}
 EOF
     echo 1 > "$STATE/prepared"
     chmod 666 "$CONFIG/app_config.json" "$CONFIG/hook_config.json" "$STATE/prepared" 2>/dev/null

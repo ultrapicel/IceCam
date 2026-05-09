@@ -1,4 +1,3 @@
-\
 package com.icecam.dev;
 
 import android.Manifest;
