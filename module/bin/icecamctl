@@ -1,0 +1,26 @@
+#!/system/bin/sh
+ICE=/data/adb/icecam
+LOGS=$ICE/logs
+mkdir -p "$ICE/bin" "$LOGS" "$ICE/config" "$ICE/state"
+case "$1" in
+  status)
+    echo "IceCam ctl v0.3.1-dev"
+    echo "uid=$(id)"
+    echo "ctl=/data/adb/icecam/bin/icecamctl"
+    echo "module_dir=$(ls -d /data/adb/modules/icecam 2>/dev/null)"
+    echo "logs=$LOGS"
+    ;;
+  prepare-hooks)
+    echo "$(date '+%Y-%m-%d %H:%M:%S') prepare-hooks requested" >> "$LOGS/hook.log"
+    cat > "$ICE/config/hook_config.json" <<JSON
+{"enabled":true,"mode":"log-only","version":"0.3.1-dev","path":"/data/adb/icecam/bin/icecamctl"}
+JSON
+    echo 1 > "$ICE/state/hooks_prepared"
+    echo "prepared hooks"
+    ;;
+  logs)
+    tar -czf /sdcard/Download/icecam_logs.tar.gz "$ICE" 2>/dev/null
+    echo "exported /sdcard/Download/icecam_logs.tar.gz"
+    ;;
+  *) echo "usage: icecamctl status|prepare-hooks|logs"; exit 2;;
+esac

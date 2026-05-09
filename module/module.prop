@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam System Camera Dev
-version=v0.3.0-dev
-versionCode=3
-author=IceCam
- description=IceCam root module: service/logging/hook preparation for Camera1/Camera2/CameraX/NDK research build
+name=IceCam
+version=v0.3.1-dev
+versionCode=31
+author=IceCam Dev
+summary=IceCam system camera replacement dev module

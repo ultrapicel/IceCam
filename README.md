@@ -1,28 +1,18 @@
-# IceCam v3 dev
+# IceCam v3.1 dev
 
-Dev build with first LSPosed hook-layer skeleton.
-
-Install instructions for v3:
-
-- APK: update
-- Root module: reinstall
-- Reboot: required
-- LSPosed: enable IceCam module and select target apps, then force-stop target app
-
-v3 hook mode is **log-only**. It does not yet replace frames. It logs Camera2 calls:
-
-- CameraManager.getCameraIdList
-- CameraManager.getCameraCharacteristics
-- CameraManager.openCamera
-
-Logs:
+Fixes root module layout. `icecamctl` is now installed at:
 
 ```sh
-su -c icecamctl logs
+/data/adb/icecam/bin/icecamctl
 ```
 
-Expected bundle:
+Update matrix:
 
 ```text
-/sdcard/Download/icecam_logs.tar.gz
+APK: update
+Root module: reinstall
+Reboot: required
+LSPosed: enable IceCam for target camera apps
 ```
+
+v3.1 is log-only hook verification. It logs Camera2 calls; it does not replace frames yet.
