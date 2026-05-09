@@ -1,58 +1,37 @@
-# IceCam v4 dev
+# IceCam v5 dev
 
-IceCam v4 is a GitHub-ready Android + root module + LSPosed hook-layer skeleton.
+Large dev slice for IceCam.
 
-## Build
-
-Upload this repository to GitHub and run:
-
-`Actions -> Build IceCam v4`
-
-Artifacts:
-
-- `IceCam-app-v0.4.0-dev.apk`
-- `IceCam-root-module-v0.4.0-dev.zip`
-- `IceCam-source-snapshot-v0.4.0-dev.zip`
-
-## Install
-
-For v4:
+## For v5
 
 ```text
 APK: update
 Root module: reinstall
 Reboot: required
-LSPosed scope: Camera / Telegram / Chrome
+LSPosed scope: Camera / Telegram / Chrome / target apps
 ```
 
-## Current behavior
+## What v5 includes
 
-v4 is log-only. It does not replace frames yet.
+- Android app UI
+- media picker
+- preview image canvas
+- transform config: mirror / zoom / rotate
+- hook modes:
+  - log-only
+  - block-open-test
+  - virtual-stub
+- root module
+- icecamctl
+- LSPosed legacy hook entry
+- Camera1/Camera2 hook telemetry
+- app config path:
+  `/data/adb/icecam/config/app_config.json`
+- logs:
+  `/data/adb/icecam/logs/hook.log`
 
-It should log:
+## Current limitation
 
-- package load
-- `CameraManager.getCameraIdList`
-- `CameraManager.getCameraCharacteristics`
-- `CameraManager.openCamera`
-- legacy `android.hardware.Camera.open`
+v5 still does not replace camera frames. It prepares the control/config/hook contract and lets us verify that target apps are intercepted.
 
-Main log:
-
-```sh
-su -c cat /data/adb/icecam/logs/hook.log
-```
-
-Logcat fallback:
-
-```sh
-logcat -d | grep 'IceCam/Hook'
-```
-
-## Control
-
-```sh
-su -c /data/adb/icecam/bin/icecamctl status
-su -c /data/adb/icecam/bin/icecamctl prepare-hooks
-su -c /data/adb/icecam/bin/icecamctl logs
-```
+Frame replacement requires the next layer: Surface/CameraDevice callback proxy or native camera path.

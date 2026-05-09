@@ -10,19 +10,11 @@
         android:allowBackup="false"
         android:supportsRtl="true"
         android:extractNativeLibs="true">
-        <meta-data
-            android:name="xposedmodule"
-            android:value="true"/>
-        <meta-data
-            android:name="xposeddescription"
-            android:value="IceCam camera hook layer"/>
-        <meta-data
-            android:name="xposedminversion"
-            android:value="93"/>
+        <meta-data android:name="xposedmodule" android:value="true"/>
+        <meta-data android:name="xposeddescription" android:value="IceCam camera hook layer"/>
+        <meta-data android:name="xposedminversion" android:value="93"/>
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="true">
+        <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>

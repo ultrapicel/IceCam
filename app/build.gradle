@@ -10,8 +10,8 @@ android {
         applicationId "com.icecam.dev"
         minSdk 23
         targetSdk 35
-        versionCode 40
-        versionName "0.4.0-dev"
+        versionCode 50
+        versionName "0.5.0-dev"
     }
 }
 

@@ -1,4 +1,4 @@
-name: Build IceCam v4
+name: Build IceCam v5
 
 on:
   push:
@@ -7,19 +7,15 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v3
 
       - name: Build Xposed API stub if missing
         run: |
@@ -36,24 +32,22 @@ jobs:
           echo "/tmp/gradle-8.7/bin" >> $GITHUB_PATH
 
       - name: Build APK
-        run: |
-          gradle --no-daemon :app:assembleDebug
+        run: gradle --no-daemon :app:assembleDebug
 
       - name: Build root module ZIP
         run: |
           cd module
-          zip -r ../IceCam-root-module-v0.4.0-dev.zip ./*
+          zip -r ../IceCam-root-module-v0.5.0-dev.zip ./*
           cd ..
 
-      - name: Rename APK
+      - name: Package artifacts
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/debug/app-debug.apk out/IceCam-app-v0.4.0-dev.apk
-          cp IceCam-root-module-v0.4.0-dev.zip out/
-          zip -r out/IceCam-source-snapshot-v0.4.0-dev.zip . -x '.git/*' 'out/*'
+          cp app/build/outputs/apk/debug/app-debug.apk out/IceCam-app-v0.5.0-dev.apk
+          cp IceCam-root-module-v0.5.0-dev.zip out/
+          zip -r out/IceCam-source-snapshot-v0.5.0-dev.zip . -x '.git/*' 'out/*'
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: IceCam-v4-dev
+          name: IceCam-v5-dev
           path: out/*

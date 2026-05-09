@@ -3,44 +3,47 @@ ICE=/data/adb/icecam
 LOGS="$ICE/logs"
 CONFIG="$ICE/config"
 STATE="$ICE/state"
-mkdir -p "$ICE/bin" "$LOGS" "$CONFIG" "$STATE"
+MEDIA="$ICE/media"
+mkdir -p "$ICE/bin" "$LOGS" "$CONFIG" "$STATE" "$MEDIA"
 chmod 777 "$LOGS" 2>/dev/null
-
 now() { date '+%F %T'; }
 
 case "$1" in
   status)
-    echo "IceCam status"
+    echo "IceCam status v0.5.0-dev"
     echo "uid=$(id)"
     echo "ctl=$0"
     echo "module_dir=$ICE"
-    echo "logs=$LOGS"
     echo "prepared=$(cat "$STATE/prepared" 2>/dev/null)"
+    echo "config=$(cat "$CONFIG/app_config.json" 2>/dev/null)"
     ;;
   prepare-hooks)
-    echo "$(now) prepare-hooks requested" >> "$LOGS/hook.log"
+    echo "$(now) prepare-hooks requested v0.5.0-dev" >> "$LOGS/hook.log"
+    if [ ! -f "$CONFIG/app_config.json" ]; then
+      cat > "$CONFIG/app_config.json" <<EOF
+{"enabled":true,"version":"0.5.0-dev","mode":"log-only","cameraMode":"auto","mediaUri":"","mirror":false,"scale":1.0,"rotation":0.0}
+EOF
+    fi
     cat > "$CONFIG/hook_config.json" <<EOF
-{
-  "enabled": true,
-  "mode": "log-only",
-  "version": "0.4.0-dev",
-  "targets": ["camera2", "camera1"],
-  "note": "v4 logs CameraManager/Camera.open calls only"
-}
+{"enabled":true,"version":"0.5.0-dev","targets":["camera1","camera2"],"notes":"v5 hook telemetry and injection contract"}
 EOF
     echo 1 > "$STATE/prepared"
-    chmod 666 "$CONFIG/hook_config.json" "$STATE/prepared" 2>/dev/null
+    chmod 666 "$CONFIG/app_config.json" "$CONFIG/hook_config.json" "$STATE/prepared" 2>/dev/null
     chmod 777 "$LOGS" 2>/dev/null
-    echo "prepared hooks"
+    echo "prepared hooks v5"
     ;;
   logs)
-    OUT=/sdcard/Download/icecam_debug_v4.tar.gz
-    tar -czf "$OUT" "$LOGS" "$CONFIG" "$STATE" 2>/dev/null
+    OUT=/sdcard/Download/icecam_debug_v5.tar.gz
+    tar -czf "$OUT" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" 2>/dev/null
     echo "exported $OUT"
     ;;
+  clear-logs)
+    rm -f "$LOGS"/*.log
+    echo "logs cleared"
+    ;;
   *)
-    echo "IceCam control"
-    echo "usage: icecamctl status|prepare-hooks|logs"
+    echo "IceCam control v5"
+    echo "usage: icecamctl status|prepare-hooks|logs|clear-logs"
     exit 2
     ;;
 esac

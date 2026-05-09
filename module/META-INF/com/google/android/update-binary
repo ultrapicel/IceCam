@@ -2,8 +2,10 @@
 OUTFD=$2
 ZIPFILE=$3
 ui_print() { echo "ui_print $1" > /proc/self/fd/$OUTFD; echo "ui_print" > /proc/self/fd/$OUTFD; }
-ui_print "IceCam v0.4.0-dev installer"
+ui_print "IceCam v0.5.0-dev installer"
+rm -rf /data/adb/modules/icecam
+mkdir -p /data/adb/modules/icecam
 unzip -o "$ZIPFILE" -x 'META-INF/*' -d /data/adb/modules/icecam >&2
-set_perm_recursive() { chmod -R 755 "$2"; }
+chmod -R 755 /data/adb/modules/icecam
 ui_print "Installed. Reboot required."
 exit 0
