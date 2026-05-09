@@ -7,7 +7,6 @@ MEDIA="$ICE/media"
 mkdir -p "$ICE/bin" "$LOGS" "$CONFIG" "$STATE" "$MEDIA"
 chmod 777 "$LOGS" 2>/dev/null
 now() { date '+%F %T'; }
-
 case "$1" in
   status)
     echo "IceCam status v0.5.1-dev"
@@ -24,16 +23,12 @@ case "$1" in
 {"enabled":true,"version":"0.5.1-dev","mode":"log-only","cameraMode":"auto","mediaUri":"","mirror":false,"scale":1.0,"rotation":0.0}
 EOF
     fi
-    cat > "$CONFIG/hook_config.json" <<EOF
-{"enabled":true,"version":"0.5.1-dev","targets":["camera1","camera2"],"notes":"v5 hook telemetry and injection contract"}
-EOF
     echo 1 > "$STATE/prepared"
-    chmod 666 "$CONFIG/app_config.json" "$CONFIG/hook_config.json" "$STATE/prepared" 2>/dev/null
-    chmod 777 "$LOGS" 2>/dev/null
-    echo "prepared hooks v5"
+    chmod 666 "$CONFIG/app_config.json" "$STATE/prepared" 2>/dev/null
+    echo "prepared hooks v5.1"
     ;;
   logs)
-    OUT=/sdcard/Download/icecam_debug_v5.tar.gz
+    OUT=/sdcard/Download/icecam_debug_v5_1.tar.gz
     tar -czf "$OUT" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" 2>/dev/null
     echo "exported $OUT"
     ;;
@@ -41,9 +36,5 @@ EOF
     rm -f "$LOGS"/*.log
     echo "logs cleared"
     ;;
-  *)
-    echo "IceCam control v5"
-    echo "usage: icecamctl status|prepare-hooks|logs|clear-logs"
-    exit 2
-    ;;
+  *) echo "usage: icecamctl status|prepare-hooks|logs|clear-logs"; exit 2 ;;
 esac
