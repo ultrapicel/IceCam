@@ -16,3 +16,7 @@ LSPosed: enable IceCam for target camera apps
 ```
 
 v3.1 is log-only hook verification. It logs Camera2 calls; it does not replace frames yet.
+
+
+## v3.1.1
+GitHub Actions fixed: no local gradlew required; workflow installs Gradle 8.7 and locates the project root automatically.
