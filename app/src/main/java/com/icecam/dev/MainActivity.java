@@ -20,11 +20,12 @@ import java.util.*;
 public class MainActivity extends Activity {
     private static final int REQ_PHOTO = 701;
     private static final int REQ_VIDEO = 702;
-    private static final String APP_VERSION = "v7.5-dev-guide-ui";
+    private static final String APP_VERSION = "v7.6-dev-flow-perms-ui";
     private final String ctl = "/data/adb/icecam/bin/icecamctl";
     private final String ice = "/data/adb/icecam";
     private String tab = "Dashboard", mode = "log-only", cameraMode = "auto", mediaType = "none";
     private boolean replacementActive = false, loop = true, mirror = false;
+    private int diagStep = 1;
     private int rotation = 0;
     private float zoom = 1.0f;
     private Uri mediaUri = null;
@@ -77,9 +78,9 @@ public class MainActivity extends Activity {
     }
     private Button btn(String s, boolean primary) {
         Button b=new Button(this); b.setText(s); b.setAllCaps(false); b.setTextSize(14); b.setTextColor(Color.WHITE); b.setGravity(Gravity.CENTER);
-        b.setMinHeight(dp(48)); b.setPadding(dp(12),0,dp(12),0);
-        b.setBackground(glass(primary?Color.argb(142,48,116,210):Color.argb(64,255,255,255), 20));
-        if (Build.VERSION.SDK_INT >= 21) { b.setElevation(dp(primary?6:4)); b.setTranslationZ(dp(primary?2:1)); }
+        b.setMinHeight(dp(50)); b.setPadding(dp(14),0,dp(14),0);
+        b.setBackground(glass(primary?Color.argb(168,56,124,222):Color.argb(74,255,255,255), 22));
+        if (Build.VERSION.SDK_INT >= 21) { b.setElevation(dp(primary?8:5)); b.setTranslationZ(dp(primary?3:1)); b.setStateListAnimator(null); }
         return b;
     }
     private LinearLayout card(){
@@ -115,30 +116,30 @@ public class MainActivity extends Activity {
 
     private void dashboard(){
         LinearLayout s=card(); section(s,"Status", "Current local UI state. Root state is checked by Step 1.");
+        pillRow(s,"Next diagnostic step", String.valueOf(diagStep));
         pillRow(s,"Replacement", replacementActive?"ACTIVE":"STOPPED"); pillRow(s,"Hook mode",mode); pillRow(s,"Camera target",cameraMode); pillRow(s,"Media",mediaType); pillRow(s,"Selected",mediaUri==null?"none":"yes");
 
         LinearLayout w=card(); section(w,"Diagnostic flow", "Press in order. Do not skip steps while testing hook telemetry.");
-        addBtn(w,"1 · Request Root Check", true, v->requestRootCheck());
-        addBtn(w,"2 · Prepare Hook Layer", true, v->prepareHooks());
-        addBtn(w,"3A · Select Photo", false, v->selectPhoto());
-        addBtn(w,"3B · Select Video", false, v->selectVideo());
-        addBtn(w,"4 · Start Replacement", true, v->startReplacement());
-        addBtn(w,"5 · Open target camera manually", false, v->show("Now open Camera / Telegram / Chrome camera screen. After testing, return here and press Step 6."));
-        addBtn(w,"6 · Export Debug Bundle", true, v->exportDebugBundle());
+        addBtn(w,"1 · Root Check", diagStep==1, v->{diagStep=2; requestRootCheck(); renderUi();});
+        addBtn(w,"2 · Prepare Hook Layer", diagStep==2, v->{diagStep=3; prepareHooks(); renderUi();});
+        addBtn(w,"3A · Select Photo", diagStep==3, v->selectPhoto());
+        addBtn(w,"3B · Select Video", diagStep==3, v->selectVideo());
+        addBtn(w,"4 · Start Replacement", diagStep==4, v->{diagStep=5; startReplacement(); renderUi();});
+        addBtn(w,"5 · Open target camera manually", diagStep==5, v->{diagStep=6; show("Open Camera / Telegram / Chrome camera screen now. Then return and press Step 6 Export Debug Bundle."); renderUi();});
+        addBtn(w,"6 · Export Debug Bundle", diagStep==6, v->{diagStep=1; exportDebugBundle(); renderUi();});
         addBtn(w,"Stop Replacement", false, v->stopReplacement());
 
         LinearLayout n=card(); section(n,"Expected v7 hook markers", null);
-        n.addView(muted("[LOAD] → [HOOKED] → getCameraIdList → getCameraCharacteristics → openCamera"));
+        n.addView(muted("Required markers: [LOAD] → [HOOKED] → getCameraIdList → getCameraCharacteristics → openCamera"));
+        n.addView(muted("Known dev note: v7.6 also fixes /data/adb/icecam permissions so hook can read active/config and append hook.log."));
     }
     private void rootTab(){
         LinearLayout c=card(); section(c,"Root / module paths", "No automatic su on app start."); c.addView(muted("control path: "+ctl)); c.addView(muted("module path: "+ice));
-        LinearLayout a=card(); section(a,"Root actions", "Only low-level module operations are here.");
-        addBtn(a,"Request Root Check", true, v->requestRootCheck());
-        addBtn(a,"Prepare Hook Layer", false, v->prepareHooks());
+        LinearLayout a=card(); section(a,"Root tools", "Main diagnostic actions are only on Dashboard to avoid duplicate flow buttons.");
         addBtn(a,"Clear Logs", false, v->runCtl("clear-logs"));
     }
     private void mediaTab(){
-        LinearLayout info=card(); section(info,"Media preview", "Selection buttons are in Dashboard step 3 to keep testing order clear.");
+        LinearLayout info=card(); section(info,"Media preview", "Select media only through Dashboard step 3 during diagnostics.");
         info.addView(muted("Selected media URI: "+String.valueOf(mediaUri))); info.addView(muted("Working copy path: /data/adb/icecam/media/source"));
         LinearLayout b=card(); section(b,"Preview controls", "Affects preview/config only; frame injection is not enabled in v7.");
         addBtn(b,"Loop "+(loop?"ON":"OFF"),false,v->{loop=!loop; renderUi();}); addBtn(b,"Mirror",false,v->{mirror=!mirror; applyPreviewTransform(); writeAppConfigViaRoot();});
@@ -154,7 +155,7 @@ public class MainActivity extends Activity {
         LinearLayout t=card(); section(t,"Target camera", null); addBtn(t,"auto", cameraMode.equals("auto"),v->{cameraMode="auto";writeAppConfigViaRoot();renderUi();}); addBtn(t,"back", cameraMode.equals("back"),v->{cameraMode="back";writeAppConfigViaRoot();renderUi();}); addBtn(t,"front", cameraMode.equals("front"),v->{cameraMode="front";writeAppConfigViaRoot();renderUi();});
     }
     private void logsTab(){
-        LinearLayout a=card(); section(a,"Logs", "Read-only views. Bundle export is Step 6 on Dashboard.");
+        LinearLayout a=card(); section(a,"Logs", "Read-only views. Export is only Step 6 on Dashboard.");
         addBtn(a,"Show Hook Log",true,v->runRoot("cat /data/adb/icecam/logs/hook.log 2>/dev/null || true"));
         addBtn(a,"Show Module Log",false,v->runRoot("cat /data/adb/icecam/logs/module.log 2>/dev/null || true"));
         addBtn(a,"Show Filtered Logcat",false,v->runRoot("logcat -d -v threadtime | grep -E 'IceCam|LSPosed|Xposed|CameraManager|Camera2|CameraService|CameraProvider' | tail -n 260"));
@@ -166,7 +167,7 @@ public class MainActivity extends Activity {
 
     private void selectPhoto(){ Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT); i.addCategory(Intent.CATEGORY_OPENABLE); i.setType("image/*"); startActivityForResult(i, REQ_PHOTO); }
     private void selectVideo(){ Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT); i.addCategory(Intent.CATEGORY_OPENABLE); i.setType("video/*"); startActivityForResult(i, REQ_VIDEO); }
-    @Override protected void onActivityResult(int r,int c,Intent d){ super.onActivityResult(r,c,d); if(c==RESULT_OK&&d!=null){ mediaUri=d.getData(); try{getContentResolver().takePersistableUriPermission(mediaUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Throwable ignored){} mediaType=(r==REQ_VIDEO)?"video":"photo"; tab="Dashboard"; renderUi(); } }
+    @Override protected void onActivityResult(int r,int c,Intent d){ super.onActivityResult(r,c,d); if(c==RESULT_OK&&d!=null){ mediaUri=d.getData(); try{getContentResolver().takePersistableUriPermission(mediaUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Throwable ignored){} mediaType=(r==REQ_VIDEO)?"video":"photo"; diagStep=4; tab="Dashboard"; renderUi(); } }
     private void updatePreview(){ if(mediaUri==null) return; if(mediaType.equals("video")){ imagePreview.setVisibility(View.GONE); videoPreview.setVisibility(View.VISIBLE); videoPreview.setVideoURI(mediaUri); videoPreview.setOnPreparedListener(mp->{mp.setLooping(loop); videoPreview.start();}); } else { videoPreview.setVisibility(View.GONE); imagePreview.setVisibility(View.VISIBLE); imagePreview.setImageURI(mediaUri); } applyPreviewTransform(); }
     private void applyPreviewTransform(){ View v=mediaType.equals("video")?videoPreview:imagePreview; if(v==null)return; v.setScaleX((mirror?-1:1)*zoom); v.setScaleY(zoom); v.setRotation(rotation); }
 

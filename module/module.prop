@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam v7.5 Hook Layer
-version=7.5-dev-guide-ui
+name=IceCam v7.6 Hook Layer
+version=7.6-dev-guide-ui
 versionCode=8
 author=IceCam
 summary=IceCam root control layer and LSPosed telemetry baseline
