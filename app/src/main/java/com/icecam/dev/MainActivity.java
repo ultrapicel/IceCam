@@ -21,7 +21,7 @@ import com.icecam.dev.renderer.RendererSandbox;
 public class MainActivity extends Activity {
     private static final int REQ_PHOTO = 701;
     private static final int REQ_VIDEO = 702;
-    private static final String APP_VERSION = "v9.5.1-low-level-deep-probe";
+    private static final String APP_VERSION = "v9.6.0-first-real-camera1-injection";
     private final String ctl = "/data/adb/icecam/bin/icecamctl";
     private final String ice = "/data/adb/icecam";
     private String tab = "Dashboard", mode = "log-only", cameraMode = "auto", compatibilityMode = "strict-real", mediaType = "none";
@@ -91,7 +91,7 @@ public class MainActivity extends Activity {
     }
 
     private void requestRuntimePermissionsOnly() {
-        // v9.5.1: do not request or root-toggle storage permissions at startup.
+        // v9.6.0: do not request or root-toggle storage permissions at startup.
         // Media access is SAF-based (ACTION_OPEN_DOCUMENT + persistable URI), which is stable on Android 12-15
         // and avoids MIUI/AOSP process kills caused by MANAGE_EXTERNAL_STORAGE / storage appop changes.
         ArrayList<String> missing = new ArrayList<>();
@@ -157,7 +157,7 @@ public class MainActivity extends Activity {
     private void renderUi() {
         root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackground(appBg());
         status = tv("IceCam " + APP_VERSION, 20, 1); status.setPadding(dp(14),dp(12),dp(14),dp(6)); root.addView(status);
-        TextView hint = muted("Development build · v9.5.1 low-level deep probe · no frame injection yet"); hint.setPadding(dp(14),0,dp(14),dp(6)); root.addView(hint);
+        TextView hint = muted("Development build · v9.6.0 first real Camera1 injection · experimental"); hint.setPadding(dp(14),0,dp(14),dp(6)); root.addView(hint);
 
         HorizontalScrollView hsv = new HorizontalScrollView(this); hsv.setHorizontalScrollBarEnabled(false); tabBar = new LinearLayout(this); tabBar.setOrientation(LinearLayout.HORIZONTAL); tabBar.setPadding(dp(8),dp(4),dp(8),dp(6)); hsv.addView(tabBar); root.addView(hsv);
         for (String t: new String[]{"Dashboard","Root","Media","Hooks","Logs","Diagnostics"}) { final String ft=t; TextView b=chip(t, tab.equals(t)); b.setOnClickListener(v->{tab=ft; saveSettings(); renderUi();}); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(t.equals("Diagnostics")?112:92),dp(44)); lp.setMargins(dp(3),0,dp(3),0); tabBar.addView(b, lp); }
@@ -185,7 +185,7 @@ public class MainActivity extends Activity {
 
         LinearLayout n=card(); section(n,"Expected v7 hook markers", null);
         n.addView(muted("Required markers: [LOAD] → [HOOKED] → getCameraIdList → getCameraCharacteristics → openCamera"));
-        n.addView(muted("v9.5.1 required markers: provider bridge OK, low-level route classifier, CameraProvider/HAL inventory, openCamera/session/surface traces"));
+        n.addView(muted("v9.6.0 required markers: provider bridge OK, Camera1 callback wrap, Camera1InjectionJson count, renderer active, no crash"));
     }
     private void rootTab(){
         LinearLayout c=card(); section(c,"Root / module paths", "Root is requested once on app start in dev builds. Manual tools stay here."); c.addView(muted("control path: "+ctl)); c.addView(muted("module path: "+ice));
@@ -198,7 +198,7 @@ public class MainActivity extends Activity {
     private void mediaTab(){
         LinearLayout info=card(); section(info,"Media preview", "Select media only through Dashboard step 3 during diagnostics.");
         info.addView(muted("Selected media URI: "+String.valueOf(mediaUri))); info.addView(muted("Working copy path: /data/adb/icecam/media/source"));
-        LinearLayout b=card(); section(b,"Preview controls", "Affects preview/config only; frame injection is not enabled yet.");
+        LinearLayout b=card(); section(b,"Preview controls", "Affects preview/config. v9.6.0 can inject a generated NV21 test pattern in Camera1 experimental mode.");
         addBtn(b,"Loop "+(loop?"ON":"OFF"),false,v->{loop=!loop; saveSettings(); writeAppConfigViaRoot(); renderUi();}); addBtn(b,"Mirror",false,v->{mirror=!mirror; applyPreviewTransform(); saveSettings(); writeAppConfigViaRoot();});
         addBtn(b,"Zoom +",false,v->{zoom+=0.1f; applyPreviewTransform(); saveSettings(); writeAppConfigViaRoot();}); addBtn(b,"Zoom -",false,v->{zoom=Math.max(0.1f,zoom-0.1f); applyPreviewTransform(); saveSettings(); writeAppConfigViaRoot();});
         addBtn(b,"Rotate",false,v->{rotation=(rotation+90)%360; applyPreviewTransform(); saveSettings(); writeAppConfigViaRoot();}); addBtn(b,"Reset Transform",false,v->{zoom=1;rotation=0;mirror=false;applyPreviewTransform();saveSettings();writeAppConfigViaRoot();});
@@ -207,8 +207,10 @@ public class MainActivity extends Activity {
         frame.addView(imagePreview, new FrameLayout.LayoutParams(-1,-1, Gravity.CENTER)); frame.addView(videoPreview, new FrameLayout.LayoutParams(-1,-1, Gravity.CENTER)); updatePreview();
     }
     private void hooksTab(){
-        LinearLayout c=card(); section(c,"Hook configuration", "v9.5.1 deepens system-camera provider/HAL feasibility. LSPosed hooks remain diagnostic/fallback only; no frame injection yet."); pillRow(c,"Mode",mode); pillRow(c,"Target",cameraMode); pillRow(c,"Compatibility",compatibilityMode);
+        LinearLayout c=card(); section(c,"Hook configuration", "v9.6.0 adds first real Camera1 NV21 preview injection. Keep log-only for safe tracing; use experimental mode only for testing."); pillRow(c,"Mode",mode); pillRow(c,"Target",cameraMode); pillRow(c,"Compatibility",compatibilityMode);
         LinearLayout a=card(); section(a,"Mode", null); addBtn(a,"log-only", mode.equals("log-only"),v->{mode="log-only";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(a,"block-open-test", mode.equals("block-open-test"),v->{mode="block-open-test";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(a,"virtual-stub", mode.equals("virtual-stub"),v->{mode="virtual-stub";saveSettings();writeAppConfigViaRoot();renderUi();});
+        addBtn(a,"camera1-nv21-test", mode.equals("camera1-nv21-test"),v->{mode="camera1-nv21-test";saveSettings();writeAppConfigViaRoot();renderUi();});
+        addBtn(a,"experimental-frame-injection", mode.equals("experimental-frame-injection"),v->{mode="experimental-frame-injection";saveSettings();writeAppConfigViaRoot();renderUi();});
         LinearLayout t=card(); section(t,"Target camera", null); addBtn(t,"auto", cameraMode.equals("auto"),v->{cameraMode="auto";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(t,"back", cameraMode.equals("back"),v->{cameraMode="back";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(t,"front", cameraMode.equals("front"),v->{cameraMode="front";saveSettings();writeAppConfigViaRoot();renderUi();});
         LinearLayout m=card(); section(m,"Compatibility profile mode", "strict-real is default; compatibility/experimental are passive flags in v8.");
         addBtn(m,"strict-real", compatibilityMode.equals("strict-real"),v->{compatibilityMode="strict-real";saveSettings();writeAppConfigViaRoot();renderUi();});
@@ -255,7 +257,7 @@ public class MainActivity extends Activity {
             "  \"mediaUri\": \""+uri+"\",\n"+
             "  \"mediaPath\": \"/data/adb/icecam/media/source\",\n"+
             "  \"mediaMetaPath\": \"/data/adb/icecam/media/source.meta.json\",\n"+
-            "  \"pipelineStage\": \"system-camera-provider-probe-passive\",\n"+
+            "  \"pipelineStage\": \"first-real-camera1-injection-experimental\",\n"+
             "  \"loop\": "+loop+", \"mirror\": "+mirror+", \"zoom\": "+zoom+", \"rotation\": "+rotation+"\n}"; }
     private void writeAppConfigViaRoot(){ String b64=android.util.Base64.encodeToString(json().getBytes(StandardCharsets.UTF_8), android.util.Base64.NO_WRAP); runRoot("mkdir -p /data/adb/icecam/config && echo '"+b64+"' | base64 -d > /data/adb/icecam/config/app_config.json && chmod 666 /data/adb/icecam/config/app_config.json"); }
     private void copyMediaToRoot(){ try{ File tmp=new File(getCacheDir(),"icecam_source"); long bytes=0; try(InputStream in=getContentResolver().openInputStream(mediaUri); OutputStream os=new FileOutputStream(tmp)){ byte[] buf=new byte[1024*128]; int n; while((n=in.read(buf))>0){ os.write(buf,0,n); bytes+=n; }} mediaBytes=bytes; saveSettings(); String meta=mediaMetaJson(bytes); String b64=android.util.Base64.encodeToString(meta.getBytes(StandardCharsets.UTF_8), android.util.Base64.NO_WRAP); runRoot("mkdir -p /data/adb/icecam/media && cp '"+tmp.getAbsolutePath()+"' /data/adb/icecam/media/source && echo '"+b64+"' | base64 -d > /data/adb/icecam/media/source.meta.json && chmod 666 /data/adb/icecam/media/source /data/adb/icecam/media/source.meta.json && ls -l /data/adb/icecam/media/source /data/adb/icecam/media/source.meta.json"); }catch(Exception e){ show("copyMediaToRoot error: "+e); } }

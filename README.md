@@ -1,12 +1,12 @@
-# IceCam v9.5.1 — Low Level Deep Probe
+# IceCam v9.6.0 — Low Level Deep Probe
 
-`v9.5.1-low-level-deep-probe` pivots IceCam toward a system-level camera-provider/HAL route. It is still passive diagnostics only: no fake frames, no Surface replacement, no provider replacement yet.
+`v9.6.0-first-real-camera1-injection` pivots IceCam toward a system-level camera-provider/HAL route. It is still passive diagnostics only: no fake frames, no Surface replacement, no provider replacement yet.
 
 ## Goal
 
 Stop relying on per-app behavior as the primary architecture. LSPosed remains useful for telemetry and fallback, but the main target is a system-camera path that can affect most apps through Android's normal camera stack.
 
-## Added in v9.5.1
+## Added in v9.6.0
 
 - Root-side `system-probe` command.
 - Debug bundle now includes `system_camera_probe/`.
@@ -34,9 +34,9 @@ Priority order:
 
 ## GitHub Actions artifacts
 
-- `IceCam-app-v9.5.1.apk`
-- `IceCam-root-module-v9.5.1.zip`
-- `IceCam-source-snapshot-v9.5.1.zip`
+- `IceCam-app-v9.6.0.apk`
+- `IceCam-root-module-v9.6.0.zip`
+- `IceCam-source-snapshot-v9.6.0.zip`
 
 ## Test flow
 
@@ -45,4 +45,4 @@ Priority order:
 3. Open IceCam.
 4. Root → Low Level Deep Probe, or Dashboard → normal diagnostic flow.
 5. Export Lite Debug Bundle.
-6. Send `icecam_debug_v9.5.1_<timestamp>.tar.gz`.
+6. Send `icecam_debug_v9.6.0_<timestamp>.tar.gz`.

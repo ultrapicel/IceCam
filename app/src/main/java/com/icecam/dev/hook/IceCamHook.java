@@ -2,6 +2,8 @@ package com.icecam.dev.hook;
 
 import android.util.Log;
 import android.content.Context;
+import android.app.Application;
+import android.hardware.Camera;
 import android.database.Cursor;
 import android.net.Uri;
 import android.hardware.camera2.CameraCharacteristics;
@@ -33,11 +35,12 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static final String SESSION_EVENTS = CACHE_DIR + "/capture_session_events.jsonl";
     private static final String SURFACE_EVENTS = CACHE_DIR + "/surface_events.jsonl";
     private static final String SURFACE_OWNERSHIP_EVENTS = CACHE_DIR + "/surface_ownership_events.jsonl";
-    private static final String VERSION = "v9.5.1-low-level-deep-probe";
+    private static final String VERSION = "v9.6.0-first-real-camera1-injection";
     private static final String PROVIDER_CONFIG_URI = "content://com.icecam.dev.provider/config";
     private static final String PROVIDER_STATE_URI = "content://com.icecam.dev.provider/state";
     private static final String PROVIDER_MEDIA_URI = "content://com.icecam.dev.provider/media-meta";
     private static final boolean DIRECT_DATA_ADB_IO = false;
+    private static volatile Context attachedContext;
 
     @Override
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lp) throws Throwable {
@@ -56,12 +59,30 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
         accessProbe(lp);
 
+        safeInit("hookApplication.attach", new Runnable() { public void run() { hookApplicationAttach(lp); } });
         safeInit("hookCamera2.CameraManager", new Runnable() { public void run() { hookCameraManager(lp); } });
         safeInit("hookCamera2.CameraDeviceImpl", new Runnable() { public void run() { hookCameraDeviceImpl(lp); } });
         safeInit("hookCamera2.CameraCaptureSessionImpl", new Runnable() { public void run() { hookCameraSessionImpl(lp); } });
         safeInit("hookCamera1", new Runnable() { public void run() { hookCamera1(lp); } });
         safeInit("hookSurfaceTrace", new Runnable() { public void run() { hookSurfaceTrace(lp); } });
         safeInit("hookSurfaceOwnershipTrace", new Runnable() { public void run() { hookSurfaceOwnershipTrace(lp); } });
+    }
+
+
+    private void hookApplicationAttach(final XC_LoadPackage.LoadPackageParam lp) {
+        final Class<?> app = findClassBoot("android.app.Application");
+        if (app == null) return;
+        hookAll(app, "attach", new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam p) {
+                Object ctx = arg(p, 0, null);
+                if (ctx instanceof Context) {
+                    attachedContext = (Context) ctx;
+                    log("[Context] Application.attach captured package=" + lp.packageName
+                            + " process=" + lp.processName
+                            + " ctx=" + className(ctx));
+                }
+            }
+        });
     }
 
     private static void ensureRenderer(XC_LoadPackage.LoadPackageParam lp, String reason) {
@@ -480,9 +501,119 @@ public class IceCamHook implements IXposedHookLoadPackage {
             @Override protected void afterHookedMethod(MethodHookParam p) {
                 Object id = arg(p, 0, "default");
                 log("[Camera1] open after id=" + id + " result=" + className(p.getResult())
-                        + " active=" + active());
+                        + " active=" + active() + " injection=" + injectionEnabled());
             }
         });
+        hookAll(cam, "setPreviewCallback", new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam p) {
+                wrapPreviewCallback(lp, p, "setPreviewCallback");
+            }
+        });
+        hookAll(cam, "setOneShotPreviewCallback", new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam p) {
+                wrapPreviewCallback(lp, p, "setOneShotPreviewCallback");
+            }
+        });
+        hookAll(cam, "setPreviewCallbackWithBuffer", new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam p) {
+                wrapPreviewCallback(lp, p, "setPreviewCallbackWithBuffer");
+            }
+        });
+        hookAll(cam, "addCallbackBuffer", new XC_MethodHook() {
+            @Override protected void beforeHookedMethod(MethodHookParam p) {
+                Object buf = arg(p, 0, null);
+                log("[Camera1Injection] addCallbackBuffer package=" + lp.packageName
+                        + " len=" + byteArrayLength(buf) + " injection=" + injectionEnabled());
+            }
+        });
+    }
+
+    private static void wrapPreviewCallback(final XC_LoadPackage.LoadPackageParam lp, XC_MethodHook.MethodHookParam p, final String method) {
+        try {
+            Object original = arg(p, 0, null);
+            if (!(original instanceof Camera.PreviewCallback)) {
+                log("[Camera1Injection] " + method + " callback=null package=" + lp.packageName);
+                return;
+            }
+            final Camera.PreviewCallback orig = (Camera.PreviewCallback) original;
+            p.args[0] = new Camera.PreviewCallback() {
+                @Override public void onPreviewFrame(byte[] data, Camera camera) {
+                    if (!injectionEnabled()) {
+                        orig.onPreviewFrame(data, camera);
+                        return;
+                    }
+                    try {
+                        Camera.Size s = previewSize(camera);
+                        int w = s == null ? 640 : s.width;
+                        int h = s == null ? 480 : s.height;
+                        byte[] frame = makeNv21TestFrame(w, h, data == null ? 0 : data.length);
+                        logCamera1Injection(lp, method, w, h, data, frame);
+                        orig.onPreviewFrame(frame, camera);
+                    } catch (Throwable t) {
+                        log("[ERR] Camera1Injection fallback " + method + " " + stack(t));
+                        try { orig.onPreviewFrame(data, camera); } catch (Throwable ignored) {}
+                    }
+                }
+            };
+            log("[Camera1Injection] wrapped " + method + " package=" + lp.packageName
+                    + " process=" + lp.processName + " active=" + active() + " mode=" + mode());
+        } catch (Throwable t) {
+            log("[ERR] Camera1Injection wrap " + method + " " + stack(t));
+        }
+    }
+
+    private static Camera.Size previewSize(Camera camera) {
+        try {
+            Camera.Parameters p = camera == null ? null : camera.getParameters();
+            return p == null ? null : p.getPreviewSize();
+        } catch (Throwable ignored) { return null; }
+    }
+
+    private static byte[] makeNv21TestFrame(int width, int height, int requestedLen) {
+        int ySize = Math.max(1, width * height);
+        int uvSize = Math.max(1, ySize / 2);
+        int len = ySize + uvSize;
+        if (requestedLen >= len) len = requestedLen;
+        byte[] out = new byte[len];
+        long t = (System.currentTimeMillis() / 80L) & 0xff;
+        for (int y = 0; y < height; y++) {
+            int row = y * width;
+            for (int x = 0; x < width; x++) {
+                int band = ((x / Math.max(1, width / 8)) + (y / Math.max(1, height / 6)) + (int)(t / 8)) & 1;
+                int v = band == 0 ? 48 : 205;
+                if (x < 6 || y < 6 || x >= width - 6 || y >= height - 6) v = 235;
+                out[row + x] = (byte) v;
+            }
+        }
+        for (int i = ySize; i + 1 < out.length; i += 2) {
+            out[i] = (byte) 128;      // V
+            out[i + 1] = (byte) 128;  // U
+        }
+        return out;
+    }
+
+    private static long lastInjectionLogTs;
+    private static int injectionFrameCount;
+    private static void logCamera1Injection(XC_LoadPackage.LoadPackageParam lp, String method, int w, int h, byte[] in, byte[] out) {
+        injectionFrameCount++;
+        long now = System.currentTimeMillis();
+        if (now - lastInjectionLogTs < 1000) return;
+        lastInjectionLogTs = now;
+        String json = "{\"version\":\"" + VERSION + "\",\"package\":\"" + esc(lp.packageName)
+                + "\",\"process\":\"" + esc(lp.processName) + "\",\"method\":\"" + esc(method)
+                + "\",\"width\":" + w + ",\"height\":" + h
+                + ",\"inputBytes\":" + byteArrayLength(in) + ",\"outputBytes\":" + byteArrayLength(out)
+                + ",\"frameCount\":" + injectionFrameCount + ",\"mode\":\"" + esc(mode()) + "\"}";
+        try { Log.i(TAG, "Camera1InjectionJson " + json); } catch (Throwable ignored) {}
+        xlog("IceCam/Hook Camera1InjectionJson " + json);
+    }
+
+    private static int byteArrayLength(Object o) { return o instanceof byte[] ? ((byte[])o).length : -1; }
+
+    private static boolean injectionEnabled() {
+        if (!active()) return false;
+        String m = mode();
+        return "camera1-nv21-test".equals(m) || "experimental-frame-injection".equals(m);
     }
 
     private static void accessProbe(XC_LoadPackage.LoadPackageParam lp) {
@@ -836,6 +967,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
             Object app = helper.getMethod("currentApplication").invoke(null);
             if (app instanceof Context) return (Context) app;
         } catch (Throwable ignored) {}
+        if (attachedContext != null) return attachedContext;
         try {
             Class<?> at = Class.forName("android.app.ActivityThread");
             Object app = at.getMethod("currentApplication").invoke(null);

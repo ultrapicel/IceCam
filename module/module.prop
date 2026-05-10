@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam v9.5.1 Low Level Deep Probe
-version=v9.5.1-low-level-deep-probe
-versionCode=951
+name=IceCam v9.6.0 First Real Camera1 Injection
+version=v9.6.0-first-real-camera1-injection
+versionCode=960
 author=IceCam
-summary=IceCam root control layer, LSPosed camera telemetry, provider bridge, passive renderer sandbox, safe storage bootstrap, and debug bundles for Android 12-15
+summary=IceCam root control layer, LSPosed camera telemetry, provider bridge, Camera1 NV21 experimental injection, safe storage bootstrap, and debug bundles for Android 12-15
