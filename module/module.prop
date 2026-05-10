@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam v9.4.4 Root Bootstrap Cleanup
-version=9.4.3-safe-storage-bootstrap
-versionCode=942
+name=IceCam v9.4.5 Provider Bridge
+version=v9.4.5-provider-bridge
+versionCode=945
 author=IceCam
-summary=IceCam root control layer, LSPosed telemetry, profile cache, lite debug bundle, startup root permission bootstrap, settings persistence, install cleanup, and Surface ownership mapping
+summary=IceCam root control layer, LSPosed camera telemetry, provider bridge, passive renderer sandbox, safe storage bootstrap, and debug bundles for Android 12-15

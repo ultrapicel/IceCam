@@ -1,6 +1,9 @@
 package com.icecam.dev.hook;
 
 import android.util.Log;
+import android.content.Context;
+import android.database.Cursor;
+import android.net.Uri;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.params.StreamConfigurationMap;
@@ -30,7 +33,11 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static final String SESSION_EVENTS = CACHE_DIR + "/capture_session_events.jsonl";
     private static final String SURFACE_EVENTS = CACHE_DIR + "/surface_events.jsonl";
     private static final String SURFACE_OWNERSHIP_EVENTS = CACHE_DIR + "/surface_ownership_events.jsonl";
-    private static final String VERSION = "9.4.3-safe-root-bootstrap";
+    private static final String VERSION = "v9.4.5-provider-bridge";
+    private static final String PROVIDER_CONFIG_URI = "content://com.icecam.dev.provider/config";
+    private static final String PROVIDER_STATE_URI = "content://com.icecam.dev.provider/state";
+    private static final String PROVIDER_MEDIA_URI = "content://com.icecam.dev.provider/media-meta";
+    private static final boolean DIRECT_DATA_ADB_IO = false;
 
     @Override
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lp) throws Throwable {
@@ -44,8 +51,9 @@ public class IceCamHook implements IXposedHookLoadPackage {
                 + " classLoader=" + safe(lp.classLoader)
                 + " active=" + active()
                 + " mode=" + mode()
+                + " provider=" + trim(providerConfig(), 256)
                 + " mediaPath=" + MEDIA
-                + " mediaExists=" + new File(MEDIA).exists());
+                + " mediaExists=" + directMediaExists());
 
         accessProbe(lp);
 
@@ -219,10 +227,10 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     private static void sessionEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p) {
         if (!shouldTrace(lp, action)) return;
-        String json = "{\"version\":\"9.4.3-safe-root-bootstrap\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"v9.4.5-provider-bridge\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"active\":" + active()
-                + ",\"mode\":\"" + esc(mode()) + "\",\"mediaExists\":" + new File(MEDIA).exists()
+                + ",\"mode\":\"" + esc(mode()) + "\",\"mediaExists\":" + directMediaExists()
                 + ",\"args\":\"" + esc(argsSummary(p)) + "\""
                 + ",\"requestTargets\":\"" + esc(requestTargetsFromArgs(p)) + "\"}";
         try { Log.i(TAG, "CaptureSessionJson " + json); } catch (Throwable ignored) {}
@@ -286,7 +294,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     private static void surfaceEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p) {
         if (!shouldTrace(lp, action)) return;
-        String json = "{\"version\":\"9.4.3-safe-root-bootstrap\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"v9.4.5-provider-bridge\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"thread\":\"" + esc(Thread.currentThread().getName())
                 + "\",\"active\":" + active() + ",\"mode\":\"" + esc(mode())
@@ -344,7 +352,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     private static void surfaceOwnerEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p, Object focus) {
         if (!shouldTrace(lp, action)) return;
-        String json = "{\"version\":\"9.4.3-safe-root-bootstrap\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"v9.4.5-provider-bridge\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"thread\":\"" + esc(Thread.currentThread().getName())
                 + "\",\"active\":" + active() + ",\"mode\":\"" + esc(mode())
@@ -480,16 +488,24 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     private static void accessProbe(XC_LoadPackage.LoadPackageParam lp) {
         if (isSelfPackage(lp)) return;
+        String config = providerConfig();
+        String state = providerState();
+        String media = providerMediaMeta();
         StringBuilder sb = new StringBuilder();
-        sb.append("[AccessProbe] package=").append(lp.packageName)
+        sb.append("[ProviderProbe] package=").append(lp.packageName)
           .append(" process=").append(lp.processName)
-          .append(" activeRead=").append(probeRead(ACTIVE))
-          .append(" configRead=").append(probeRead(CONFIG))
-          .append(" mediaExists=").append(probeExists(MEDIA))
-          .append(" hookLogWrite=").append(probeAppend(LOG))
-          .append(" cacheWrite=").append(probeAppend(PROFILE_EVENTS));
+          .append(" providerConfig=").append(trim(config, 512))
+          .append(" providerState=").append(trim(state, 256))
+          .append(" providerMedia=").append(trim(media, 256));
+        if (DIRECT_DATA_ADB_IO) {
+            sb.append(" activeRead=").append(probeRead(ACTIVE))
+              .append(" configRead=").append(probeRead(CONFIG))
+              .append(" mediaExists=").append(probeExists(MEDIA));
+        } else {
+            sb.append(" directDataAdbIo=disabled");
+        }
         log(sb.toString());
-        try { Log.i(TAG, sb.toString()); } catch (Throwable ignored) {}
+        try { Log.i(TAG, "ProviderBridgeJson " + config); } catch (Throwable ignored) {}
     }
 
     private static String probeRead(String path) {
@@ -543,7 +559,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static String profileJson(XC_LoadPackage.LoadPackageParam lp, String id, CameraCharacteristics cc) {
         StringBuilder sb = new StringBuilder();
         sb.append('{');
-        field(sb, "version", "9.4.3-safe-root-bootstrap", true);
+        field(sb, "version", VERSION, true);
         field(sb, "ts", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()), false);
         field(sb, "package", lp.packageName, false);
         field(sb, "process", lp.processName, false);
@@ -626,22 +642,32 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static String esc(String s) { return s == null ? "" : s.replace("\\","\\\\").replace("\"","\\\"").replace("\n"," ").replace("\r"," "); }
 
     private static String compatibilityMode() {
-        String c = readSmall(CONFIG);
-        int i = c.indexOf("\"compatibilityMode\"");
-        if (i < 0) return "strict-real";
-        int colon = c.indexOf(':', i);
-        int q = c.indexOf('\"', colon + 1);
-        int e = c.indexOf('\"', q + 1);
-        return (q >= 0 && e > q) ? c.substring(q + 1, e) : "strict-real";
+        String c = providerConfig();
+        String v = jsonString(c, "compatibilityMode", null);
+        if (v != null && v.length() > 0) return v;
+        if (DIRECT_DATA_ADB_IO) {
+            c = readSmall(CONFIG);
+            v = jsonString(c, "compatibilityMode", null);
+            if (v != null && v.length() > 0) return v;
+        }
+        return "strict-real";
     }
 
     private static void writeFile(String path, String data) {
+        if (!DIRECT_DATA_ADB_IO) {
+            try { Log.i(TAG, "direct write disabled path=" + path + " bytes=" + (data == null ? 0 : data.length())); } catch (Throwable ignored) {}
+            return;
+        }
         try {
             File f = new File(path); File d = f.getParentFile(); if (d != null && !d.exists()) d.mkdirs();
             FileOutputStream out = new FileOutputStream(f, false); out.write(data.getBytes("UTF-8")); out.close();
         } catch (Throwable t) { log("[WARN] writeFile " + path + " " + shortErr(t)); }
     }
     private static void appendFile(String path, String data) {
+        if (!DIRECT_DATA_ADB_IO) {
+            try { Log.i(TAG, "direct append disabled path=" + path + " bytes=" + (data == null ? 0 : data.length())); } catch (Throwable ignored) {}
+            return;
+        }
         try {
             File f = new File(path); File d = f.getParentFile(); if (d != null && !d.exists()) d.mkdirs();
             FileOutputStream out = new FileOutputStream(f, true); out.write(data.getBytes("UTF-8")); out.close();
@@ -703,8 +729,8 @@ public class IceCamHook implements IXposedHookLoadPackage {
                 + " active=" + active()
                 + " mode=" + mode()
                 + " mediaPath=" + MEDIA
-                + " mediaExists=" + new File(MEDIA).exists()
-                + " config=" + trim(readSmall(CONFIG), 384));
+                + " mediaExists=" + directMediaExists()
+                + " provider=" + trim(providerConfig(), 512));
     }
 
     private static Object arg(XC_MethodHook.MethodHookParam p, int index, Object fallback) {
@@ -712,17 +738,97 @@ public class IceCamHook implements IXposedHookLoadPackage {
     }
 
     private static boolean active() {
-        return "1".equals(readSmall(ACTIVE).trim());
+        String c = providerConfig();
+        String v = jsonRaw(c, "active", null);
+        if ("true".equalsIgnoreCase(v)) return true;
+        if ("false".equalsIgnoreCase(v)) return false;
+        return DIRECT_DATA_ADB_IO && "1".equals(readSmall(ACTIVE).trim());
     }
 
     private static String mode() {
-        String c = readSmall(CONFIG);
-        int i = c.indexOf("\"mode\"");
-        if (i < 0) return "unknown";
-        int colon = c.indexOf(':', i);
-        int q = c.indexOf('"', colon + 1);
-        int e = c.indexOf('"', q + 1);
-        return (q >= 0 && e > q) ? c.substring(q + 1, e) : "unknown";
+        String c = providerConfig();
+        String v = jsonString(c, "mode", null);
+        if (v != null && v.length() > 0) return v;
+        if (DIRECT_DATA_ADB_IO) {
+            v = jsonString(readSmall(CONFIG), "mode", null);
+            if (v != null && v.length() > 0) return v;
+        }
+        return "unknown";
+    }
+
+    private static boolean directMediaExists() {
+        if (!DIRECT_DATA_ADB_IO) return false;
+        try { return new File(MEDIA).exists(); } catch (Throwable ignored) { return false; }
+    }
+
+    private static String providerConfig() { return queryProvider(PROVIDER_CONFIG_URI); }
+    private static String providerState() { return queryProvider(PROVIDER_STATE_URI); }
+    private static String providerMediaMeta() { return queryProvider(PROVIDER_MEDIA_URI); }
+
+    private static String queryProvider(String uri) {
+        Cursor c = null;
+        try {
+            Context ctx = currentContext();
+            if (ctx == null) return "provider:no-context";
+            c = ctx.getContentResolver().query(Uri.parse(uri), null, null, null, null);
+            if (c == null) return "provider:null-cursor";
+            if (!c.moveToFirst()) return "provider:empty";
+            int idx = c.getColumnIndex("json");
+            return idx >= 0 ? c.getString(idx) : "provider:no-json-column";
+        } catch (Throwable t) {
+            return "provider:" + shortErr(t);
+        } finally {
+            try { if (c != null) c.close(); } catch (Throwable ignored) {}
+        }
+    }
+
+    private static Context currentContext() {
+        try {
+            Class<?> helper = Class.forName("de.robv.android.xposed.AndroidAppHelper");
+            Object app = helper.getMethod("currentApplication").invoke(null);
+            if (app instanceof Context) return (Context) app;
+        } catch (Throwable ignored) {}
+        try {
+            Class<?> at = Class.forName("android.app.ActivityThread");
+            Object app = at.getMethod("currentApplication").invoke(null);
+            if (app instanceof Context) return (Context) app;
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private static String jsonString(String json, String key, String fallback) {
+        if (json == null) return fallback;
+        String needle = "\"" + key + "\"";
+        int i = json.indexOf(needle);
+        if (i < 0) return fallback;
+        int colon = json.indexOf(':', i + needle.length());
+        if (colon < 0) return fallback;
+        int q = json.indexOf('\"', colon + 1);
+        if (q < 0) return fallback;
+        StringBuilder out = new StringBuilder();
+        boolean esc = false;
+        for (int x = q + 1; x < json.length(); x++) {
+            char ch = json.charAt(x);
+            if (esc) { out.append(ch); esc = false; continue; }
+            if (ch == '\\') { esc = true; continue; }
+            if (ch == '\"') return out.toString();
+            out.append(ch);
+        }
+        return fallback;
+    }
+
+    private static String jsonRaw(String json, String key, String fallback) {
+        if (json == null) return fallback;
+        String needle = "\"" + key + "\"";
+        int i = json.indexOf(needle);
+        if (i < 0) return fallback;
+        int colon = json.indexOf(':', i + needle.length());
+        if (colon < 0) return fallback;
+        int start = colon + 1;
+        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
+        int end = start;
+        while (end < json.length() && ",}".indexOf(json.charAt(end)) < 0) end++;
+        return json.substring(start, end).trim().replace("\"", "");
     }
 
     private static String readSmall(String path) {
@@ -804,9 +910,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
         String line = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()) + " " + msg;
         try { Log.i(TAG, line); } catch (Throwable ignored) {}
         xlog("IceCam/Hook " + line);
-
-        // Primary: normal append. Works when /data/adb/icecam/logs/hook.log is chmod 666 and SELinux allows it.
-        boolean wrote = false;
+        if (!DIRECT_DATA_ADB_IO) return;
         try {
             File f = new File(LOG);
             File dir = f.getParentFile();
@@ -814,17 +918,8 @@ public class IceCamHook implements IXposedHookLoadPackage {
             FileOutputStream out = new FileOutputStream(f, true);
             out.write((line + "\n").getBytes("UTF-8"));
             out.close();
-            wrote = true;
         } catch (Throwable t) {
-            try { Log.w(TAG, "file-log primary failed: " + shortErr(t)); } catch (Throwable ignored) {}
-        }
-
-        // Fallback: shell append without su. This sometimes succeeds where direct FileOutputStream is blocked by app context quirks.
-        if (!wrote) {
-            try {
-                String q = line.replace("'", "'\\''");
-                Runtime.getRuntime().exec(new String[]{"sh", "-c", "echo '" + q + "' >> " + LOG}).waitFor();
-            } catch (Throwable ignored) {}
+            try { Log.w(TAG, "file-log failed: " + shortErr(t)); } catch (Throwable ignored) {}
         }
     }
 }

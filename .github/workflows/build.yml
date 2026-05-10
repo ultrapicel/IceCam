@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      ICECAM_VERSION: v9.4.4
+      ICECAM_VERSION: v9.4.5
       GRADLE_VERSION: 8.7
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -51,6 +51,7 @@ jobs:
           test -f app/src/main/assets/xposed_init
           test -f app/src/main/java/com/icecam/dev/MainActivity.java
           test -f app/src/main/java/com/icecam/dev/hook/IceCamHook.java
+          test -f app/src/main/java/com/icecam/dev/IceCamStateProvider.java
           test -f app/libs/xposed-api-stub.jar
           test -f module/module.prop
           test -f module/common/bin/icecamctl

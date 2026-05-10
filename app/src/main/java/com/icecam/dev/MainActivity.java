@@ -21,12 +21,13 @@ import com.icecam.dev.renderer.RendererSandbox;
 public class MainActivity extends Activity {
     private static final int REQ_PHOTO = 701;
     private static final int REQ_VIDEO = 702;
-    private static final String APP_VERSION = "v9.4.4-safe-storage-bootstrap";
+    private static final String APP_VERSION = "v9.4.5-provider-bridge";
     private final String ctl = "/data/adb/icecam/bin/icecamctl";
     private final String ice = "/data/adb/icecam";
     private String tab = "Dashboard", mode = "log-only", cameraMode = "auto", compatibilityMode = "strict-real", mediaType = "none";
     private boolean replacementActive = false, loop = true, mirror = false;
     private int diagStep = 1;
+    private long mediaBytes = 0L;
     private int rotation = 0;
     private float zoom = 1.0f;
     private Uri mediaUri = null;
@@ -67,6 +68,7 @@ public class MainActivity extends Activity {
         rotation=p.getInt("rotation", rotation);
         zoom=p.getFloat("zoom", zoom);
         diagStep=p.getInt("diagStep", diagStep);
+        mediaBytes=p.getLong("mediaBytes", mediaBytes);
         String u=p.getString("mediaUri", "");
         if(u.length()>0) mediaUri=Uri.parse(u);
     }
@@ -84,11 +86,12 @@ public class MainActivity extends Activity {
                 .putFloat("zoom", zoom)
                 .putInt("diagStep", diagStep)
                 .putString("mediaUri", mediaUri==null?"":mediaUri.toString())
+                .putLong("mediaBytes", mediaBytes)
                 .apply();
     }
 
     private void requestRuntimePermissionsOnly() {
-        // v9.4.4: do not request or root-toggle storage permissions at startup.
+        // v9.4.5: do not request or root-toggle storage permissions at startup.
         // Media access is SAF-based (ACTION_OPEN_DOCUMENT + persistable URI), which is stable on Android 12-15
         // and avoids MIUI/AOSP process kills caused by MANAGE_EXTERNAL_STORAGE / storage appop changes.
         ArrayList<String> missing = new ArrayList<>();
@@ -154,7 +157,7 @@ public class MainActivity extends Activity {
     private void renderUi() {
         root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackground(appBg());
         status = tv("IceCam " + APP_VERSION, 20, 1); status.setPadding(dp(14),dp(12),dp(14),dp(6)); root.addView(status);
-        TextView hint = muted("Development build · v9.4.4 safe storage/root bootstrap · no frame injection yet"); hint.setPadding(dp(14),0,dp(14),dp(6)); root.addView(hint);
+        TextView hint = muted("Development build · v9.4.5 provider bridge · no frame injection yet"); hint.setPadding(dp(14),0,dp(14),dp(6)); root.addView(hint);
 
         HorizontalScrollView hsv = new HorizontalScrollView(this); hsv.setHorizontalScrollBarEnabled(false); tabBar = new LinearLayout(this); tabBar.setOrientation(LinearLayout.HORIZONTAL); tabBar.setPadding(dp(8),dp(4),dp(8),dp(6)); hsv.addView(tabBar); root.addView(hsv);
         for (String t: new String[]{"Dashboard","Root","Media","Hooks","Logs","Diagnostics"}) { final String ft=t; TextView b=chip(t, tab.equals(t)); b.setOnClickListener(v->{tab=ft; saveSettings(); renderUi();}); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(t.equals("Diagnostics")?112:92),dp(44)); lp.setMargins(dp(3),0,dp(3),0); tabBar.addView(b, lp); }
@@ -182,14 +185,14 @@ public class MainActivity extends Activity {
 
         LinearLayout n=card(); section(n,"Expected v7 hook markers", null);
         n.addView(muted("Required markers: [LOAD] → [HOOKED] → getCameraIdList → getCameraCharacteristics → openCamera"));
-        n.addView(muted("v9.4.3 required markers: target [LOAD], renderer init/tick, openCamera, createCaptureSession, CaptureRequest target/surface ownership traces"));
+        n.addView(muted("v9.4.5 required markers: target [LOAD], renderer init/tick, openCamera, createCaptureSession, CaptureRequest target/surface ownership traces"));
     }
     private void rootTab(){
         LinearLayout c=card(); section(c,"Root / module paths", "Root is requested once on app start in dev builds. Manual tools stay here."); c.addView(muted("control path: "+ctl)); c.addView(muted("module path: "+ice));
         LinearLayout a=card(); section(a,"Root tools", "Main diagnostic actions are only on Dashboard to avoid duplicate flow buttons.");
         addBtn(a,"Clear Logs", false, v->runCtl("clear-logs"));
         addBtn(a,"Clean Old Dev Data", false, v->runCtl("reset-dev-data"));
-        addBtn(a,"Reset UI Settings", false, v->{prefs().edit().clear().apply(); mediaUri=null; mediaType="none"; replacementActive=false; loop=true; mirror=false; zoom=1.0f; rotation=0; diagStep=1; tab="Dashboard"; show("UI settings reset"); renderUi();});
+        addBtn(a,"Reset UI Settings", false, v->{prefs().edit().clear().apply(); mediaUri=null; mediaType="none"; replacementActive=false; mediaBytes=0L; loop=true; mirror=false; zoom=1.0f; rotation=0; diagStep=1; tab="Dashboard"; show("UI settings reset"); renderUi();});
     }
     private void mediaTab(){
         LinearLayout info=card(); section(info,"Media preview", "Select media only through Dashboard step 3 during diagnostics.");
@@ -203,7 +206,7 @@ public class MainActivity extends Activity {
         frame.addView(imagePreview, new FrameLayout.LayoutParams(-1,-1, Gravity.CENTER)); frame.addView(videoPreview, new FrameLayout.LayoutParams(-1,-1, Gravity.CENTER)); updatePreview();
     }
     private void hooksTab(){
-        LinearLayout c=card(); section(c,"Hook configuration", "v9.4.3 keeps passive renderer diagnostics: renderer thread, placeholder producer and owned SurfaceTexture telemetry. Camera frames are not replaced yet."); pillRow(c,"Mode",mode); pillRow(c,"Target",cameraMode); pillRow(c,"Compatibility",compatibilityMode);
+        LinearLayout c=card(); section(c,"Hook configuration", "v9.4.5 uses provider bridge + passive renderer diagnostics: renderer thread, placeholder producer and owned SurfaceTexture telemetry. Camera frames are not replaced yet."); pillRow(c,"Mode",mode); pillRow(c,"Target",cameraMode); pillRow(c,"Compatibility",compatibilityMode);
         LinearLayout a=card(); section(a,"Mode", null); addBtn(a,"log-only", mode.equals("log-only"),v->{mode="log-only";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(a,"block-open-test", mode.equals("block-open-test"),v->{mode="block-open-test";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(a,"virtual-stub", mode.equals("virtual-stub"),v->{mode="virtual-stub";saveSettings();writeAppConfigViaRoot();renderUi();});
         LinearLayout t=card(); section(t,"Target camera", null); addBtn(t,"auto", cameraMode.equals("auto"),v->{cameraMode="auto";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(t,"back", cameraMode.equals("back"),v->{cameraMode="back";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(t,"front", cameraMode.equals("front"),v->{cameraMode="front";saveSettings();writeAppConfigViaRoot();renderUi();});
         LinearLayout m=card(); section(m,"Compatibility profile mode", "strict-real is default; compatibility/experimental are passive flags in v8.");
@@ -219,6 +222,8 @@ public class MainActivity extends Activity {
         addBtn(a,"Show Filtered Logcat",false,v->runRoot("logcat -d -v threadtime | grep -E 'IceCam|LSPosed|Xposed|CameraManager|Camera2|CameraService|CameraProvider|ProfileCache' | tail -n 320"));
         addBtn(a,"Show Profile Cache",false,v->runRoot("cat /data/adb/icecam/cache/camera_profiles.json 2>/dev/null || echo no-profile-cache-yet"));
         addBtn(a,"Show Renderer Events",false,v->runRoot("cat /data/adb/icecam/cache/renderer_events.jsonl 2>/dev/null || echo no-renderer-events-yet"));
+        addBtn(a,"Probe Provider Bridge",false,v->runRoot("content query --uri content://com.icecam.dev.provider/config; content query --uri content://com.icecam.dev.provider/state; content query --uri content://com.icecam.dev.provider/media-meta"));
+        addBtn(a,"Show SELinux Snapshot",false,v->runRoot("getenforce; ls -Zd /data/adb /data/adb/icecam /data/adb/icecam/* 2>/dev/null; logcat -d | grep -i 'avc: denied' | grep -iE 'icecam|adb_data_file|camera' | tail -n 80"));
     }
     private void diagTab(){
         LinearLayout c=card(); section(c,"Device", null); c.addView(muted("package: "+getPackageName())); c.addView(muted("device: "+Build.MANUFACTURER+" "+Build.MODEL+" / "+Build.DEVICE)); c.addView(muted("sdk: "+Build.VERSION.SDK_INT)); c.addView(muted("abi: "+Arrays.toString(Build.SUPPORTED_ABIS)));
@@ -252,7 +257,7 @@ public class MainActivity extends Activity {
             "  \"pipelineStage\": \"renderer-sandbox-diagnostics-passive\",\n"+
             "  \"loop\": "+loop+", \"mirror\": "+mirror+", \"zoom\": "+zoom+", \"rotation\": "+rotation+"\n}"; }
     private void writeAppConfigViaRoot(){ String b64=android.util.Base64.encodeToString(json().getBytes(StandardCharsets.UTF_8), android.util.Base64.NO_WRAP); runRoot("mkdir -p /data/adb/icecam/config && echo '"+b64+"' | base64 -d > /data/adb/icecam/config/app_config.json && chmod 666 /data/adb/icecam/config/app_config.json"); }
-    private void copyMediaToRoot(){ try{ File tmp=new File(getCacheDir(),"icecam_source"); long bytes=0; try(InputStream in=getContentResolver().openInputStream(mediaUri); OutputStream os=new FileOutputStream(tmp)){ byte[] buf=new byte[1024*128]; int n; while((n=in.read(buf))>0){ os.write(buf,0,n); bytes+=n; }} String meta=mediaMetaJson(bytes); String b64=android.util.Base64.encodeToString(meta.getBytes(StandardCharsets.UTF_8), android.util.Base64.NO_WRAP); runRoot("mkdir -p /data/adb/icecam/media && cp '"+tmp.getAbsolutePath()+"' /data/adb/icecam/media/source && echo '"+b64+"' | base64 -d > /data/adb/icecam/media/source.meta.json && chmod 666 /data/adb/icecam/media/source /data/adb/icecam/media/source.meta.json && ls -l /data/adb/icecam/media/source /data/adb/icecam/media/source.meta.json"); }catch(Exception e){ show("copyMediaToRoot error: "+e); } }
+    private void copyMediaToRoot(){ try{ File tmp=new File(getCacheDir(),"icecam_source"); long bytes=0; try(InputStream in=getContentResolver().openInputStream(mediaUri); OutputStream os=new FileOutputStream(tmp)){ byte[] buf=new byte[1024*128]; int n; while((n=in.read(buf))>0){ os.write(buf,0,n); bytes+=n; }} mediaBytes=bytes; saveSettings(); String meta=mediaMetaJson(bytes); String b64=android.util.Base64.encodeToString(meta.getBytes(StandardCharsets.UTF_8), android.util.Base64.NO_WRAP); runRoot("mkdir -p /data/adb/icecam/media && cp '"+tmp.getAbsolutePath()+"' /data/adb/icecam/media/source && echo '"+b64+"' | base64 -d > /data/adb/icecam/media/source.meta.json && chmod 666 /data/adb/icecam/media/source /data/adb/icecam/media/source.meta.json && ls -l /data/adb/icecam/media/source /data/adb/icecam/media/source.meta.json"); }catch(Exception e){ show("copyMediaToRoot error: "+e); } }
     private String mediaMetaJson(long bytes){ String uri=(mediaUri==null?"":mediaUri.toString()).replace("\\","\\\\").replace("\"","\\\""); return "{\n"+
             "  \"version\": \""+APP_VERSION+"\",\n"+
             "  \"mediaType\": \""+mediaType+"\",\n"+
