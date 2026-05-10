@@ -21,7 +21,7 @@ import com.icecam.dev.renderer.RendererSandbox;
 public class MainActivity extends Activity {
     private static final int REQ_PHOTO = 701;
     private static final int REQ_VIDEO = 702;
-    private static final String APP_VERSION = "v9.4.3-safe-root-bootstrap";
+    private static final String APP_VERSION = "v9.4.4-safe-storage-bootstrap";
     private final String ctl = "/data/adb/icecam/bin/icecamctl";
     private final String ice = "/data/adb/icecam";
     private String tab = "Dashboard", mode = "log-only", cameraMode = "auto", compatibilityMode = "strict-real", mediaType = "none";
@@ -88,14 +88,11 @@ public class MainActivity extends Activity {
     }
 
     private void requestRuntimePermissionsOnly() {
+        // v9.4.4: do not request or root-toggle storage permissions at startup.
+        // Media access is SAF-based (ACTION_OPEN_DOCUMENT + persistable URI), which is stable on Android 12-15
+        // and avoids MIUI/AOSP process kills caused by MANAGE_EXTERNAL_STORAGE / storage appop changes.
         ArrayList<String> missing = new ArrayList<>();
         if (checkSelfPermission(Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) missing.add(Manifest.permission.CAMERA);
-        if (Build.VERSION.SDK_INT >= 33) {
-            if (checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) != android.content.pm.PackageManager.PERMISSION_GRANTED) missing.add(Manifest.permission.READ_MEDIA_IMAGES);
-            if (checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) != android.content.pm.PackageManager.PERMISSION_GRANTED) missing.add(Manifest.permission.READ_MEDIA_VIDEO);
-        } else {
-            if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED) missing.add(Manifest.permission.READ_EXTERNAL_STORAGE);
-        }
         if (!missing.isEmpty()) requestPermissions(missing.toArray(new String[0]), 7);
     }
 
@@ -157,7 +154,7 @@ public class MainActivity extends Activity {
     private void renderUi() {
         root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackground(appBg());
         status = tv("IceCam " + APP_VERSION, 20, 1); status.setPadding(dp(14),dp(12),dp(14),dp(6)); root.addView(status);
-        TextView hint = muted("Development build · v9.4.3 safe root bootstrap · no frame injection yet"); hint.setPadding(dp(14),0,dp(14),dp(6)); root.addView(hint);
+        TextView hint = muted("Development build · v9.4.4 safe storage/root bootstrap · no frame injection yet"); hint.setPadding(dp(14),0,dp(14),dp(6)); root.addView(hint);
 
         HorizontalScrollView hsv = new HorizontalScrollView(this); hsv.setHorizontalScrollBarEnabled(false); tabBar = new LinearLayout(this); tabBar.setOrientation(LinearLayout.HORIZONTAL); tabBar.setPadding(dp(8),dp(4),dp(8),dp(6)); hsv.addView(tabBar); root.addView(hsv);
         for (String t: new String[]{"Dashboard","Root","Media","Hooks","Logs","Diagnostics"}) { final String ft=t; TextView b=chip(t, tab.equals(t)); b.setOnClickListener(v->{tab=ft; saveSettings(); renderUi();}); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(t.equals("Diagnostics")?112:92),dp(44)); lp.setMargins(dp(3),0,dp(3),0); tabBar.addView(b, lp); }
@@ -228,9 +225,9 @@ public class MainActivity extends Activity {
         LinearLayout a=card(); section(a,"Camera diagnostics", null); addBtn(a,"Dump CameraManager",true,v->dumpCameras()); addBtn(a,"Read Profile Cache",false,v->runRoot("cat /data/adb/icecam/cache/camera_profiles.json 2>/dev/null || true"));
     }
 
-    private void selectPhoto(){ Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT); i.addCategory(Intent.CATEGORY_OPENABLE); i.setType("image/*"); startActivityForResult(i, REQ_PHOTO); }
-    private void selectVideo(){ Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT); i.addCategory(Intent.CATEGORY_OPENABLE); i.setType("video/*"); startActivityForResult(i, REQ_VIDEO); }
-    @Override protected void onActivityResult(int r,int c,Intent d){ super.onActivityResult(r,c,d); if(c==RESULT_OK&&d!=null){ mediaUri=d.getData(); try{getContentResolver().takePersistableUriPermission(mediaUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Throwable ignored){} mediaType=(r==REQ_VIDEO)?"video":"photo"; diagStep=4; tab="Dashboard"; saveSettings(); renderUi(); } }
+    private void selectPhoto(){ Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT); i.addCategory(Intent.CATEGORY_OPENABLE); i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION); i.setType("image/*"); startActivityForResult(i, REQ_PHOTO); }
+    private void selectVideo(){ Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT); i.addCategory(Intent.CATEGORY_OPENABLE); i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION); i.setType("video/*"); startActivityForResult(i, REQ_VIDEO); }
+    @Override protected void onActivityResult(int r,int c,Intent d){ super.onActivityResult(r,c,d); if(c==RESULT_OK&&d!=null){ mediaUri=d.getData(); try{ int flags=d.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION; getContentResolver().takePersistableUriPermission(mediaUri, flags==0?Intent.FLAG_GRANT_READ_URI_PERMISSION:flags); }catch(Throwable ignored){} mediaType=(r==REQ_VIDEO)?"video":"photo"; diagStep=4; tab="Dashboard"; saveSettings(); renderUi(); } }
     private void updatePreview(){ if(mediaUri==null) return; if(mediaType.equals("video")){ imagePreview.setVisibility(View.GONE); videoPreview.setVisibility(View.VISIBLE); videoPreview.setVideoURI(mediaUri); videoPreview.setOnPreparedListener(mp->{mp.setLooping(loop); videoPreview.start();}); } else { videoPreview.setVisibility(View.GONE); imagePreview.setVisibility(View.VISIBLE); imagePreview.setImageURI(mediaUri); } applyPreviewTransform(); }
     private void applyPreviewTransform(){ View v=mediaType.equals("video")?videoPreview:imagePreview; if(v==null)return; v.setScaleX((mirror?-1:1)*zoom); v.setScaleY(zoom); v.setRotation(rotation); }
 

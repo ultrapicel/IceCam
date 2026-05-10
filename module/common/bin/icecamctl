@@ -6,7 +6,7 @@ STATE="$ICE/state"
 MEDIA="$ICE/media"
 CACHE="$ICE/cache"
 BIN="$ICE/bin"
-VERSION="v9.4.3"
+VERSION="v9.4.4"
 APP_PKG="com.icecam.dev"
 TARGETS="com.android.camera com.android.chrome org.telegram.messenger org.telegram.messenger.web"
 
@@ -43,25 +43,14 @@ mark_root_granted() {
   chmod 666 "$STATE/root_granted" "$STATE/root_granted_at" 2>/dev/null
 }
 
-set_appops_only() {
-  # Safe while the app is foreground. pm grant may kill/restart the app process on Android.
-  appops set "$APP_PKG" CAMERA allow 2>/dev/null
-  appops set "$APP_PKG" READ_MEDIA_IMAGES allow 2>/dev/null
-  appops set "$APP_PKG" READ_MEDIA_VIDEO allow 2>/dev/null
-  appops set "$APP_PKG" READ_EXTERNAL_STORAGE allow 2>/dev/null
-  appops set "$APP_PKG" MANAGE_EXTERNAL_STORAGE allow 2>/dev/null
+safe_root_probe() {
+  # Android 12-15 compatibility rule:
+  # never mutate the foreground app permission/appop state from root.
+  # MIUI/AOSP may kill the app when storage permissions/appops change
+  # (especially MANAGE_EXTERNAL_STORAGE / READ_MEDIA_* / READ_EXTERNAL_STORAGE).
+  # Runtime permissions are handled by the app; media is SAF/app-private-copy based.
   mark_root_granted
-  log_module "foreground-safe root bootstrap completed for $APP_PKG"
-}
-
-grant_app_permissions() {
-  # Use only from module install/boot/manual repair, not from foreground app startup.
-  pm grant "$APP_PKG" android.permission.CAMERA 2>/dev/null
-  pm grant "$APP_PKG" android.permission.READ_EXTERNAL_STORAGE 2>/dev/null
-  pm grant "$APP_PKG" android.permission.READ_MEDIA_IMAGES 2>/dev/null
-  pm grant "$APP_PKG" android.permission.READ_MEDIA_VIDEO 2>/dev/null
-  set_appops_only
-  log_module "app permission grant bootstrap completed for $APP_PKG"
+  log_module "safe root probe completed for $APP_PKG; no pm grant/appops mutation"
 }
 
 init_dirs() {
@@ -75,7 +64,7 @@ init_dirs() {
   chmod 666 "$STATE/active" "$STATE/prepared" 2>/dev/null
   [ -f "$CONFIG/app_config.json" ] || cat > "$CONFIG/app_config.json" <<JSON
 {
-  "version":"9.4.3-safe-root-bootstrap",
+  "version":"9.4.4-safe-storage-bootstrap",
   "active":false,
   "mode":"log-only",
   "cameraMode":"auto",
@@ -83,7 +72,7 @@ init_dirs() {
   "mediaType":"none",
   "mediaPath":"/data/adb/icecam/media/source",
   "mediaMetaPath":"/data/adb/icecam/media/source.meta.json",
-  "pipelineStage":"renderer-sandbox-diagnostics-passive-root-bootstrap"
+  "pipelineStage":"renderer-sandbox-diagnostics-passive-safe-storage"
 }
 JSON
   chmod 666 "$CONFIG/app_config.json" 2>/dev/null
@@ -258,14 +247,14 @@ case "$1" in
   bootstrap-app)
     init_dirs
     clean_legacy
-    grant_app_permissions
-    echo "bootstrap completed"
+    safe_root_probe
+    echo "safe bootstrap completed"
     ;;
   bootstrap-app-foreground)
     init_dirs
     clean_legacy
-    set_appops_only
-    echo "foreground bootstrap completed"
+    safe_root_probe
+    echo "foreground safe bootstrap completed"
     ;;
   status)
     echo "IceCam status"
@@ -284,7 +273,7 @@ case "$1" in
     ;;
   prepare-hooks)
     clean_legacy
-    grant_app_permissions
+    safe_root_probe
     echo "$(date '+%F %T') prepare-hooks requested" >> "$LOGS/hook.log"
     echo 1 > "$STATE/prepared"
     [ -f "$STATE/active" ] || echo 0 > "$STATE/active"
@@ -295,7 +284,7 @@ case "$1" in
     ;;
   start)
     clean_legacy
-    grant_app_permissions
+    safe_root_probe
     echo 1 > "$STATE/active"
     chmod 666 "$STATE/active" 2>/dev/null
     chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
@@ -326,7 +315,7 @@ case "$1" in
     echo 0 > "$STATE/prepared"
     cat > "$CONFIG/app_config.json" <<JSON
 {
-  "version":"9.4.3-safe-root-bootstrap",
+  "version":"9.4.4-safe-storage-bootstrap",
   "active":false,
   "mode":"log-only",
   "cameraMode":"auto",
@@ -334,7 +323,7 @@ case "$1" in
   "mediaType":"none",
   "mediaPath":"/data/adb/icecam/media/source",
   "mediaMetaPath":"/data/adb/icecam/media/source.meta.json",
-  "pipelineStage":"renderer-sandbox-diagnostics-passive-root-bootstrap"
+  "pipelineStage":"renderer-sandbox-diagnostics-passive-safe-storage"
 }
 JSON
     chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null

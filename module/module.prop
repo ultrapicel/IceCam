@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam v9.4.3 Root Bootstrap Cleanup
-version=9.4.3-safe-root-bootstrap
+name=IceCam v9.4.4 Root Bootstrap Cleanup
+version=9.4.3-safe-storage-bootstrap
 versionCode=942
 author=IceCam
 summary=IceCam root control layer, LSPosed telemetry, profile cache, lite debug bundle, startup root permission bootstrap, settings persistence, install cleanup, and Surface ownership mapping
