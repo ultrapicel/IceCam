@@ -7,9 +7,11 @@ import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.net.Uri;
 import android.os.Build;
+import android.os.ParcelFileDescriptor;
+import java.io.FileNotFoundException;
 
 /**
- * v9.6.3 read-only IPC bridge for LSPosed target processes.
+ * v9.6.4 read-only IPC bridge for LSPosed target processes.
  *
  * Target apps must not read /data/adb/icecam directly: SELinux blocks
  * untrusted_app/isolated_app domains on Android 12-15. This provider exposes
@@ -20,7 +22,8 @@ public class IceCamStateProvider extends ContentProvider {
     public static final Uri CONFIG_URI = Uri.parse("content://" + AUTHORITY + "/config");
     public static final Uri STATE_URI = Uri.parse("content://" + AUTHORITY + "/state");
     public static final Uri MEDIA_META_URI = Uri.parse("content://" + AUTHORITY + "/media-meta");
-    private static final String VERSION = "v9.6.3-safe-surface-classifier";
+    public static final Uri MEDIA_SOURCE_URI = Uri.parse("content://" + AUTHORITY + "/media-source");
+    private static final String VERSION = "v9.6.4-single-preview-surface-renderer";
 
     @Override public boolean onCreate() { return true; }
 
@@ -38,7 +41,26 @@ public class IceCamStateProvider extends ContentProvider {
         return c;
     }
 
-    @Override public String getType(Uri uri) { return "vnd.android.cursor.item/vnd.com.icecam.dev.state"; }
+    @Override public String getType(Uri uri) {
+        String path = uri == null ? "" : String.valueOf(uri.getPath());
+        if ("/media-source".equals(path)) return "application/octet-stream";
+        return "vnd.android.cursor.item/vnd.com.icecam.dev.state";
+    }
+
+    @Override public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
+        String path = uri == null ? "" : String.valueOf(uri.getPath());
+        if (!"/media-source".equals(path)) throw new FileNotFoundException("unsupported: " + path);
+        SharedPreferences p = getContext().getSharedPreferences("icecam_settings", android.content.Context.MODE_PRIVATE);
+        String source = p.getString("mediaUri", "");
+        if (source == null || source.length() == 0) throw new FileNotFoundException("no selected media");
+        try {
+            return getContext().getContentResolver().openFileDescriptor(Uri.parse(source), "r");
+        } catch (Throwable t) {
+            FileNotFoundException e = new FileNotFoundException("media-source open failed: " + t.getClass().getSimpleName() + ":" + t.getMessage());
+            try { e.initCause(t); } catch (Throwable ignored) {}
+            throw e;
+        }
+    }
     @Override public Uri insert(Uri uri, ContentValues values) { throw new UnsupportedOperationException("read-only"); }
     @Override public int delete(Uri uri, String selection, String[] selectionArgs) { return 0; }
     @Override public int update(Uri uri, ContentValues values, String selection, String[] selectionArgs) { return 0; }
@@ -53,6 +75,7 @@ public class IceCamStateProvider extends ContentProvider {
                 + q("mediaType") + ":" + q(p.getString("mediaType", "none")) + ","
                 + q("mediaReady") + ":" + (p.getString("mediaUri", "").length() > 0) + ","
                 + q("mediaUri") + ":" + q(p.getString("mediaUri", "")) + ","
+                + q("mediaStreamUri") + ":" + q("content://" + AUTHORITY + "/media-source") + ","
                 + q("mediaPath") + ":" + q("/data/adb/icecam/media/source") + ","
                 + q("mediaMetaPath") + ":" + q("/data/adb/icecam/media/source.meta.json") + ","
                 + q("pipelineStage") + ":" + q("system-camera-provider-probe-passive") + ","
@@ -79,6 +102,7 @@ public class IceCamStateProvider extends ContentProvider {
                 + q("version") + ":" + q(VERSION) + ","
                 + q("mediaType") + ":" + q(p.getString("mediaType", "none")) + ","
                 + q("sourceUri") + ":" + q(p.getString("mediaUri", "")) + ","
+                + q("mediaStreamUri") + ":" + q("content://" + AUTHORITY + "/media-source") + ","
                 + q("mediaReady") + ":" + (p.getString("mediaUri", "").length() > 0) + ","
                 + q("bytes") + ":" + p.getLong("mediaBytes", 0L) + ","
                 + q("loop") + ":" + p.getBoolean("loop", true) + ","

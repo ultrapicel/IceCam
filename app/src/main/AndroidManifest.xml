@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA" />
 
-    <application android:theme="@style/AppTheme" android:label="IceCam v9.6.3" android:allowBackup="false" android:usesCleartextTraffic="true">
+    <application android:theme="@style/AppTheme" android:label="IceCam v9.6.4" android:allowBackup="false" android:usesCleartextTraffic="true">
         <meta-data android:name="xposedmodule" android:value="true" />
         <meta-data android:name="xposeddescription" android:value="IceCam camera hook layer" />
         <meta-data android:name="xposedminversion" android:value="93" />

@@ -1,21 +1,25 @@
 # IceCam Project Context
 
-Current version: v9.6.3-safe-surface-classifier.
+Current version: v9.6.4-single-preview-surface-renderer.
 
-Main direction: system-level camera replacement. LSPosed hooks are telemetry/fallback; the preferred future route is camera-provider/HAL/V4L2 feasibility.
+Main direction: universal system-level Android camera replacement. LSPosed hooks are telemetry/fallback; the preferred future route remains Camera2/CaptureSession/Surface path first, then camera-provider/HAL/vendor shim feasibility.
 
-v9.6.3 starts a bounded Camera2 Surface renderer test after target Surface discovery on the test device and across Android 12-15:
+v9.6.4 changes the previous v9.6.3 bounded renderer into a safer single-preview-surface renderer:
 
-- external camera provider route;
-- V4L2/UVC/v4l2loopback route;
-- AIDL/HIDL camera provider route;
-- vendor camera provider replacement feasibility;
-- SELinux/VINTF blockers.
+- classify Camera2 target surfaces;
+- deny ImageReader/Chrome/WebRTC surfaces;
+- score preview candidates;
+- debounce candidate selection for 450 ms;
+- run only one active renderer per target process;
+- stop immediately on lock/post/render exception;
+- draw selected image media with center-crop, zoom, mirror and rotation when available;
+- fallback to animated test pattern.
 
-Do not regress the working pieces from v9.4.6:
+Do not regress:
 
 - app starts without storage permission crash;
+- no MANAGE_EXTERNAL_STORAGE/storage appops/self pm grant bootstrap;
 - provider bridge works;
-- renderer sandbox logs;
-- Camera1/Camera2 hooks remain diagnostic;
-- no direct `/data/adb` I/O from target apps.
+- target apps do not directly read/write `/data/adb`;
+- Camera1/Camera2 tracing remains diagnostic;
+- `XposedBridge.hookAllMethods(...)` is used instead of `XposedHelpers.findAndHookMethod(...)`.

@@ -4,6 +4,10 @@ import android.util.Log;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
+import android.graphics.RectF;
 import android.content.Context;
 import android.app.Application;
 import android.hardware.Camera;
@@ -38,7 +42,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static final String SESSION_EVENTS = CACHE_DIR + "/capture_session_events.jsonl";
     private static final String SURFACE_EVENTS = CACHE_DIR + "/surface_events.jsonl";
     private static final String SURFACE_OWNERSHIP_EVENTS = CACHE_DIR + "/surface_ownership_events.jsonl";
-    private static final String VERSION = "v9.6.3-safe-surface-classifier";
+    private static final String VERSION = "v9.6.4-single-preview-surface-renderer";
     private static final String PROVIDER_CONFIG_URI = "content://com.icecam.dev.provider/config";
     private static final String PROVIDER_STATE_URI = "content://com.icecam.dev.provider/state";
     private static final String PROVIDER_MEDIA_URI = "content://com.icecam.dev.provider/media-meta";
@@ -543,8 +547,13 @@ public class IceCamHook implements IXposedHookLoadPackage {
         }
     }
 
-    private static final java.util.Set<Integer> PAINTED_SURFACES = java.util.Collections.synchronizedSet(new java.util.HashSet<Integer>());
+    private static final Object SURFACE_SELECT_LOCK = new Object();
     private static final java.util.Set<Integer> IMAGE_READER_SURFACES = java.util.Collections.synchronizedSet(new java.util.HashSet<Integer>());
+    private static SurfaceCandidate pendingCandidate;
+    private static SurfaceRenderLoop ACTIVE_RENDERER;
+    private static Thread DEBOUNCE_THREAD;
+    private static int candidateSeq;
+
     private static void maybeStartSurfaceShadow(final XC_LoadPackage.LoadPackageParam lp, Object surfaceObj, final String source) {
         if (!surfaceShadowEnabled()) return;
         if (!(surfaceObj instanceof Surface)) return;
@@ -553,23 +562,38 @@ public class IceCamHook implements IXposedHookLoadPackage {
         SurfaceDecision decision = classifySurfaceTarget(lp, s, source, id);
         logSurfaceClassifier(lp, s, source, id, decision);
         if (!decision.render) return;
-        if (!PAINTED_SURFACES.add(id)) return;
-        String json = "{\"version\":\"" + VERSION + "\",\"package\":\"" + esc(lp.packageName)
-                + "\",\"process\":\"" + esc(lp.processName) + "\",\"action\":\"candidate\",\"source\":\"" + esc(source)
-                + "\",\"surface\":\"" + esc(objectDetail(s)) + "\",\"classification\":\"" + esc(decision.kind)
-                + "\",\"reason\":\"" + esc(decision.reason) + "\",\"mode\":\"" + esc(mode()) + "\"}";
-        try { Log.i(TAG, "Camera2SurfaceShadowJson " + json); } catch (Throwable ignored) {}
-        xlog("IceCam/Hook Camera2SurfaceShadowJson " + json);
-        // v9.6.3: classified bounded render. Only render into allowlisted preview-like surfaces.
-        startContinuousSurfaceRenderer(lp, s, source, id);
+        queuePreviewCandidate(lp, s, source, id, decision);
     }
 
     private static class SurfaceDecision {
         final boolean render;
         final String kind;
         final String reason;
-        SurfaceDecision(boolean render, String kind, String reason) {
-            this.render = render; this.kind = kind; this.reason = reason;
+        final int score;
+        SurfaceDecision(boolean render, String kind, String reason) { this(render, kind, reason, 0); }
+        SurfaceDecision(boolean render, String kind, String reason, int score) {
+            this.render = render; this.kind = kind; this.reason = reason; this.score = score;
+        }
+    }
+
+    private static class SurfaceCandidate {
+        final String pkg;
+        final String proc;
+        final Surface surface;
+        final String source;
+        final int id;
+        final SurfaceDecision decision;
+        final int seq;
+        final long ts;
+        SurfaceCandidate(XC_LoadPackage.LoadPackageParam lp, Surface surface, String source, int id, SurfaceDecision decision, int seq) {
+            this.pkg = lp == null ? "" : lp.packageName;
+            this.proc = lp == null ? "" : lp.processName;
+            this.surface = surface;
+            this.source = source;
+            this.id = id;
+            this.decision = decision;
+            this.seq = seq;
+            this.ts = System.currentTimeMillis();
         }
     }
 
@@ -577,48 +601,107 @@ public class IceCamHook implements IXposedHookLoadPackage {
         String pkg = lp == null ? "" : String.valueOf(lp.packageName);
         String proc = lp == null ? "" : String.valueOf(lp.processName);
         String src = source == null ? "" : source;
-        if (!surfaceShadowEnabled()) return new SurfaceDecision(false, "disabled", "surface-shadow-disabled");
-        if (IMAGE_READER_SURFACES.contains(id)) return new SurfaceDecision(false, "image-reader", "skip-image-reader-surface");
-        if (pkg.contains("chrome") || proc.contains("chrome")) return new SurfaceDecision(false, "webrtc-or-browser", "chrome-webview-log-only");
-        if (proc.contains(":web") || proc.endsWith(".web") || proc.contains("web")) return new SurfaceDecision(false, "web-process", "web-process-log-only");
-        if (!src.contains("CaptureRequest.Builder.addTarget")) return new SurfaceDecision(false, "non-request-target", "only-render-addTarget-surfaces");
-        // Current safe allowlist: keep first visible result constrained to the system camera app.
-        // Telegram/Chrome stay trace-only until their surface roles are separated from ImageReader/WebRTC paths.
-        if ("com.android.camera".equals(pkg)) return new SurfaceDecision(true, "preview-candidate", "system-camera-allowlist");
-        return new SurfaceDecision(false, "trace-only", "package-not-allowlisted-yet");
+        if (!surfaceShadowEnabled()) return new SurfaceDecision(false, "disabled", "surface-shadow-disabled", -1000);
+        if (s == null || !s.isValid()) return new SurfaceDecision(false, "invalid", "surface-invalid", -900);
+        if (IMAGE_READER_SURFACES.contains(id)) return new SurfaceDecision(false, "image-reader", "skip-image-reader-surface", -800);
+        if (pkg.contains("chrome") || proc.contains("chrome")) return new SurfaceDecision(false, "webrtc-or-browser", "chrome-webview-log-only", -700);
+        if (proc.contains(":web") || proc.endsWith(".web") || proc.contains("web")) return new SurfaceDecision(false, "web-process", "web-process-log-only", -650);
+        if (!src.contains("CaptureRequest.Builder.addTarget")) return new SurfaceDecision(false, "non-request-target", "only-render-addTarget-surfaces", -500);
+
+        int score = 100;
+        String reason = "camera2-addTarget-preview-candidate";
+        if ("com.android.camera".equals(pkg)) { score += 200; reason = "system-camera-preview-preferred"; }
+        if (pkg.contains("camera")) score += 80;
+        if (proc != null && proc.equals(pkg)) score += 25;
+        if (mediaReady()) score += 15;
+        return new SurfaceDecision(true, "preview-candidate", reason, score);
+    }
+
+    private static void queuePreviewCandidate(final XC_LoadPackage.LoadPackageParam lp, final Surface s, final String source, final int id, final SurfaceDecision decision) {
+        final int seq;
+        synchronized (SURFACE_SELECT_LOCK) {
+            seq = ++candidateSeq;
+            if (pendingCandidate == null || decision.score >= pendingCandidate.decision.score) {
+                pendingCandidate = new SurfaceCandidate(lp, s, source, id, decision, seq);
+            }
+            logSurfaceSelect("candidate-queued", pendingCandidate, "newId=" + id + " newScore=" + decision.score + " debounceMs=450");
+            if (DEBOUNCE_THREAD == null || !DEBOUNCE_THREAD.isAlive()) {
+                DEBOUNCE_THREAD = new Thread(new Runnable() { @Override public void run() { debounceSelectLoop(); } }, "IceCamSurfaceDebounce");
+                DEBOUNCE_THREAD.setDaemon(true);
+                try { DEBOUNCE_THREAD.start(); } catch (Throwable t) { logSurfaceSelect("debounce-start-error", pendingCandidate, shortErr(t)); }
+            }
+        }
+    }
+
+    private static void debounceSelectLoop() {
+        int seenSeq = -1;
+        while (surfaceShadowEnabled()) {
+            SurfaceCandidate c;
+            synchronized (SURFACE_SELECT_LOCK) { c = pendingCandidate; seenSeq = candidateSeq; }
+            try { Thread.sleep(450L); } catch (Throwable ignored) {}
+            synchronized (SURFACE_SELECT_LOCK) {
+                if (seenSeq == candidateSeq) {
+                    c = pendingCandidate;
+                    pendingCandidate = null;
+                    if (c != null) startSingleRendererLocked(c);
+                    DEBOUNCE_THREAD = null;
+                    return;
+                }
+            }
+        }
+    }
+
+    private static void startSingleRendererLocked(SurfaceCandidate c) {
+        if (c == null || c.surface == null) return;
+        if (!c.surface.isValid()) { logSurfaceSelect("selected-invalid", c, "skip"); return; }
+        if (ACTIVE_RENDERER != null) {
+            if (ACTIVE_RENDERER.id == c.id && ACTIVE_RENDERER.running.get()) {
+                logSurfaceSelect("selected-already-active", c, "keep-current");
+                return;
+            }
+            ACTIVE_RENDERER.stop("new-preview-selected id=" + c.id);
+            ACTIVE_RENDERER = null;
+        }
+        ACTIVE_RENDERER = new SurfaceRenderLoop(c.pkg, c.proc, c.surface, c.source, c.id, c.decision.score);
+        logSurfaceSelect("selected", c, "activeRenderer=" + c.id);
+        ACTIVE_RENDERER.start();
     }
 
     private static void markImageReaderSurface(XC_LoadPackage.LoadPackageParam lp, Object obj, String source) {
         if (!(obj instanceof Surface)) return;
         int id = System.identityHashCode(obj);
         IMAGE_READER_SURFACES.add(id);
-        logSurfaceClassifier(lp, (Surface)obj, source, id, new SurfaceDecision(false, "image-reader", "registered-image-reader-surface"));
+        logSurfaceClassifier(lp, (Surface)obj, source, id, new SurfaceDecision(false, "image-reader", "registered-image-reader-surface", -800));
     }
 
     private static void logSurfaceClassifier(XC_LoadPackage.LoadPackageParam lp, Surface s, String source, int id, SurfaceDecision d) {
         String json = "{\"version\":\"" + VERSION + "\",\"package\":\"" + esc(lp == null ? "" : lp.packageName)
                 + "\",\"process\":\"" + esc(lp == null ? "" : lp.processName) + "\",\"action\":\"classify\",\"source\":\"" + esc(source)
                 + "\",\"surfaceId\":" + id + ",\"surface\":\"" + esc(objectDetail(s)) + "\",\"render\":" + d.render
-                + ",\"kind\":\"" + esc(d.kind) + "\",\"reason\":\"" + esc(d.reason) + "\",\"mode\":\"" + esc(mode()) + "\"}";
+                + ",\"kind\":\"" + esc(d.kind) + "\",\"reason\":\"" + esc(d.reason) + "\",\"score\":" + d.score + ",\"mode\":\"" + esc(mode()) + "\"}";
         try { Log.i(TAG, "SurfaceClassifierJson " + json); } catch (Throwable ignored) {}
         xlog("IceCam/Hook SurfaceClassifierJson " + json);
     }
 
-    private static final java.util.Map<Integer, SurfaceRenderLoop> SURFACE_RENDERERS = new java.util.concurrent.ConcurrentHashMap<Integer, SurfaceRenderLoop>();
-
-    private static void startContinuousSurfaceRenderer(XC_LoadPackage.LoadPackageParam lp, Surface s, String source, int id) {
-        if (SURFACE_RENDERERS.containsKey(id)) return;
-        SurfaceRenderLoop loop = new SurfaceRenderLoop(lp.packageName, lp.processName, s, source, id);
-        SURFACE_RENDERERS.put(id, loop);
-        loop.start();
+    private static void logSurfaceSelect(String action, SurfaceCandidate c, String detail) {
+        String json = "{\"version\":\"" + VERSION + "\",\"action\":\"" + esc(action)
+                + "\",\"package\":\"" + esc(c == null ? "" : c.pkg) + "\",\"process\":\"" + esc(c == null ? "" : c.proc)
+                + "\",\"surfaceId\":" + (c == null ? -1 : c.id) + ",\"score\":" + (c == null ? 0 : c.decision.score)
+                + ",\"source\":\"" + esc(c == null ? "" : c.source) + "\",\"detail\":\"" + esc(detail) + "\"}";
+        try { Log.i(TAG, "SurfaceSelectJson " + json); } catch (Throwable ignored) {}
+        xlog("IceCam/Hook SurfaceSelectJson " + json);
     }
 
     private static void stopSurfaceRender(Object surfaceObj, String reason) {
         if (!(surfaceObj instanceof Surface)) return;
         int id = System.identityHashCode(surfaceObj);
-        PAINTED_SURFACES.remove(id);
-        SurfaceRenderLoop loop = SURFACE_RENDERERS.remove(id);
-        if (loop != null) loop.stop(reason);
+        synchronized (SURFACE_SELECT_LOCK) {
+            if (ACTIVE_RENDERER != null && ACTIVE_RENDERER.id == id) {
+                ACTIVE_RENDERER.stop(reason);
+                ACTIVE_RENDERER = null;
+            }
+            if (pendingCandidate != null && pendingCandidate.id == id) pendingCandidate = null;
+        }
     }
 
     private static class SurfaceRenderLoop implements Runnable {
@@ -627,72 +710,116 @@ public class IceCamHook implements IXposedHookLoadPackage {
         final Surface surface;
         final String source;
         final int id;
+        final int score;
         final java.util.concurrent.atomic.AtomicBoolean running = new java.util.concurrent.atomic.AtomicBoolean(true);
         Thread thread;
         int frames;
         int errors;
         long startedAt;
+        Bitmap sourceBitmap;
 
-        SurfaceRenderLoop(String pkg, String proc, Surface surface, String source, int id) {
+        SurfaceRenderLoop(String pkg, String proc, Surface surface, String source, int id, int score) {
             this.pkg = pkg;
             this.proc = proc;
             this.surface = surface;
             this.source = source;
             this.id = id;
+            this.score = score;
         }
 
         void start() {
             startedAt = System.currentTimeMillis();
-            thread = new Thread(this, "IceCamSurfaceRenderer-" + id);
+            thread = new Thread(this, "IceCamSinglePreviewRenderer-" + id);
             thread.setDaemon(true);
-            logSurfaceRender("surface_render_start", "source=" + source + " surface=" + surfaceOrObjectDetails(surface));
+            logSurfaceRender("surface_render_start", "source=" + source + " score=" + score + " surface=" + surfaceOrObjectDetails(surface));
             try { thread.start(); } catch (Throwable t) { running.set(false); logSurfaceRender("surface_render_error", shortErr(t)); }
         }
 
         void stop(String reason) {
             running.set(false);
-            logSurfaceRender("surface_render_stop", "reason=" + reason + " frames=" + frames + " errors=" + errors);
+            logSurfaceRender("surface_render_stop_request", "reason=" + reason + " frames=" + frames + " errors=" + errors);
         }
 
         public void run() {
-            // Bounded first experiment: enough time to observe visibility, not enough to hang a target app forever.
-            final long maxMs = 12000L;
-            final int frameDelayMs = 100; // ~10 FPS: safer while classifier is being tuned.
+            final long maxMs = 15000L;
+            final int frameDelayMs = 66; // ~15 FPS: still conservative, less aggressive than HAL preview.
+            sourceBitmap = loadProviderImageBitmap();
             while (running.get() && surfaceShadowEnabled() && (System.currentTimeMillis() - startedAt) < maxMs) {
                 Canvas c = null;
                 try {
                     if (!surface.isValid()) { errors++; logSurfaceRender("surface_render_error", "invalid-surface"); break; }
                     c = surface.lockCanvas(null);
                     if (c == null) { errors++; logSurfaceRender("surface_render_error", "lock-null"); break; }
-                    drawContinuousPattern(c, frames);
+                    if (sourceBitmap != null && !sourceBitmap.isRecycled()) drawImageFrame(c, sourceBitmap, frames);
+                    else drawContinuousPattern(c, frames);
                     frames++;
                     if (frames == 1 || frames == 15 || frames == 60 || frames % 150 == 0) {
-                        logSurfaceRender("surface_render_frame", "frame=" + frames + " size=" + c.getWidth() + "x" + c.getHeight());
+                        logSurfaceRender("surface_render_frame", "frame=" + frames + " size=" + c.getWidth() + "x" + c.getHeight() + " image=" + (sourceBitmap != null));
                     }
                 } catch (Throwable t) {
                     errors++;
                     logSurfaceRender("surface_render_error", shortErr(t));
-                    if (errors >= 1) break;
+                    // v9.6.4 fail-safe: one lock/post exception is enough to release this target.
+                    break;
                 } finally {
-                    try { if (c != null) surface.unlockCanvasAndPost(c); } catch (Throwable t) { errors++; logSurfaceRender("surface_render_error", "unlock=" + shortErr(t)); }
+                    try { if (c != null) surface.unlockCanvasAndPost(c); } catch (Throwable t) { errors++; logSurfaceRender("surface_render_error", "unlock=" + shortErr(t)); break; }
                 }
                 try { Thread.sleep(frameDelayMs); } catch (Throwable ignored) {}
             }
             running.set(false);
-            SURFACE_RENDERERS.remove(id);
-            PAINTED_SURFACES.remove(id);
+            synchronized (SURFACE_SELECT_LOCK) { if (ACTIVE_RENDERER == this) ACTIVE_RENDERER = null; }
+            try { if (sourceBitmap != null) sourceBitmap.recycle(); } catch (Throwable ignored) {}
             logSurfaceRender("surface_render_stop", "frames=" + frames + " errors=" + errors + " ageMs=" + (System.currentTimeMillis()-startedAt));
         }
 
         void logSurfaceRender(String action, String detail) {
             String json = "{\"version\":\"" + VERSION + "\",\"package\":\"" + esc(pkg)
                     + "\",\"process\":\"" + esc(proc) + "\",\"action\":\"" + esc(action)
-                    + "\",\"surfaceId\":" + id + ",\"source\":\"" + esc(source)
+                    + "\",\"surfaceId\":" + id + ",\"score\":" + score + ",\"source\":\"" + esc(source)
                     + "\",\"frames\":" + frames + ",\"errors\":" + errors
                     + ",\"mode\":\"" + esc(mode()) + "\",\"detail\":\"" + esc(detail) + "\"}";
             try { Log.i(TAG, "Camera2SurfaceRenderJson " + json); } catch (Throwable ignored) {}
             xlog("IceCam/Hook Camera2SurfaceRenderJson " + json);
         }
+    }
+
+    private static Bitmap loadProviderImageBitmap() {
+        try {
+            String cfg = providerConfig();
+            String type = jsonString(cfg, "mediaType", "none");
+            String uri = jsonString(cfg, "mediaStreamUri", "content://com.icecam.dev.provider/media-source");
+            if (!"image".equals(type) || uri == null || uri.length() == 0 || attachedContext == null) return null;
+            java.io.InputStream in = attachedContext.getContentResolver().openInputStream(Uri.parse(uri));
+            try { return BitmapFactory.decodeStream(in); }
+            finally { try { if (in != null) in.close(); } catch (Throwable ignored) {} }
+        } catch (Throwable t) {
+            try { Log.i(TAG, "ImageRendererJson {\"version\":\"" + VERSION + "\",\"action\":\"load-error\",\"error\":\"" + esc(shortErr(t)) + "\"}"); } catch (Throwable ignored) {}
+            return null;
+        }
+    }
+
+    private static void drawImageFrame(Canvas c, Bitmap b, int frame) {
+        int w = Math.max(1, c.getWidth());
+        int h = Math.max(1, c.getHeight());
+        c.drawColor(Color.BLACK);
+        float zoom = parseFloat(jsonRaw(providerConfig(), "zoom", "1"), 1f);
+        int rotation = parseInt(jsonRaw(providerConfig(), "rotation", "0"), 0);
+        boolean mirror = "true".equals(jsonRaw(providerConfig(), "mirror", "false"));
+        float scale = Math.max(w / (float)Math.max(1, b.getWidth()), h / (float)Math.max(1, b.getHeight())) * Math.max(0.1f, zoom);
+        Matrix m = new Matrix();
+        m.postTranslate(-b.getWidth() / 2f, -b.getHeight() / 2f);
+        m.postScale(mirror ? -scale : scale, scale);
+        if (rotation != 0) m.postRotate(rotation);
+        m.postTranslate(w / 2f, h / 2f);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+        c.drawBitmap(b, m, p);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(Math.max(3f, w / 320f));
+        p.setColor(Color.WHITE);
+        c.drawRect(8, 8, w - 8, h - 8, p);
+        p.setStyle(Paint.Style.FILL);
+        p.setTextSize(Math.max(18f, w / 55f));
+        c.drawText("IceCam v9.6.4 image renderer · frame " + frame, 24, Math.min(h - 24, 48), p);
     }
 
     private static void drawContinuousPattern(Canvas c, int frame) {
@@ -714,10 +841,13 @@ public class IceCamHook implements IXposedHookLoadPackage {
         p.setStyle(Paint.Style.FILL);
         p.setTextSize(Math.max(28f, w / 24f));
         p.setColor(Color.WHITE);
-        c.drawText("IceCam v9.6.3", 48, Math.min(h - 80, 110), p);
+        c.drawText("IceCam v9.6.4", 48, Math.min(h - 80, 110), p);
         p.setTextSize(Math.max(20f, w / 42f));
-        c.drawText("continuous Surface renderer · frame " + frame, 48, Math.min(h - 40, 160), p);
+        c.drawText("single preview Surface renderer · frame " + frame, 48, Math.min(h - 40, 160), p);
     }
+
+    private static int parseInt(String s, int fallback) { try { return Integer.parseInt(String.valueOf(s).trim()); } catch (Throwable t) { return fallback; } }
+    private static float parseFloat(String s, float fallback) { try { return Float.parseFloat(String.valueOf(s).trim()); } catch (Throwable t) { return fallback; } }
 
     private static void tryPaintSurfaceOnce(XC_LoadPackage.LoadPackageParam lp, Surface s, String source, int id) {
         Canvas c = null;
@@ -733,7 +863,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
                 c.drawRect(20, 20, Math.max(60, c.getWidth()-20), Math.max(60, c.getHeight()-20), p);
                 p.setTextSize(Math.max(28f, c.getWidth() / 24f));
                 p.setColor(Color.WHITE);
-                c.drawText("IceCam v9.6.3", 48, Math.min(c.getHeight()-60, 110), p);
+                c.drawText("IceCam v9.6.4", 48, Math.min(c.getHeight()-60, 110), p);
                 p.setTextSize(Math.max(20f, c.getWidth() / 40f));
                 c.drawText("Camera2 surface single paint fallback", 48, Math.min(c.getHeight()-30, 160), p);
                 result = "paint-ok:" + c.getWidth() + "x" + c.getHeight();

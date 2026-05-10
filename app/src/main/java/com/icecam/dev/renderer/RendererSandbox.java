@@ -27,7 +27,7 @@ import java.util.Date;
 public final class RendererSandbox {
     private static final String TAG = "IceCam/RendererSandbox";
     private static final String LOG_PREFIX = "RendererSandboxJson ";
-    private static final String VERSION = "v9.6.3-safe-surface-classifier";
+    private static final String VERSION = "v9.6.4-single-preview-surface-renderer";
     private static final String CONFIG = "/data/adb/icecam/config/app_config.json";
     private static final String ACTIVE = "/data/adb/icecam/state/active";
     private static final String CACHE_DIR = "/data/adb/icecam/cache";
@@ -146,7 +146,7 @@ public final class RendererSandbox {
         c.drawRect(24, 24, w - 24, h - 24, p);
         p.setTextSize(48f);
         p.setColor(Color.WHITE);
-        c.drawText("IceCam v9.6.3 auto-pipeline sandbox", 72, 120, p);
+        c.drawText("IceCam v9.6.4 auto-pipeline sandbox", 72, 120, p);
         p.setTextSize(30f);
         c.drawText("placeholder producer — Camera2 surface shadow probe", 72, 175, p);
         p.setTextSize(24f);

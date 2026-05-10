@@ -1,5 +1,5 @@
 #!/system/bin/sh
-ui_print "Installing IceCam v9.6.3 auto pipeline camera2 surface shadow"
+ui_print "Installing IceCam v9.6.4 auto pipeline camera2 surface shadow"
 ICE=/data/adb/icecam
 mkdir -p $ICE/bin $ICE/logs $ICE/state $ICE/config $ICE/media $ICE/cache
 cp -f $MODPATH/common/bin/icecamctl $ICE/bin/icecamctl 2>/dev/null

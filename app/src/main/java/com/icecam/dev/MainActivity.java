@@ -21,7 +21,7 @@ import com.icecam.dev.renderer.RendererSandbox;
 public class MainActivity extends Activity {
     private static final int REQ_PHOTO = 701;
     private static final int REQ_VIDEO = 702;
-    private static final String APP_VERSION = "v9.6.3-safe-surface-classifier";
+    private static final String APP_VERSION = "v9.6.4-single-preview-surface-renderer";
     private final String ctl = "/data/adb/icecam/bin/icecamctl";
     private final String ice = "/data/adb/icecam";
     private String tab = "Dashboard", mode = "log-only", cameraMode = "auto", compatibilityMode = "strict-real", mediaType = "none";
@@ -157,7 +157,7 @@ public class MainActivity extends Activity {
     private void renderUi() {
         root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackground(appBg());
         status = tv("IceCam " + APP_VERSION, 20, 1); status.setPadding(dp(14),dp(12),dp(14),dp(6)); root.addView(status);
-        TextView hint = muted("Development build · v9.6.3 auto-pipeline · Camera2 safe Surface classifier + bounded renderer experiment"); hint.setPadding(dp(14),0,dp(14),dp(6)); root.addView(hint);
+        TextView hint = muted("Development build · v9.6.4 auto-pipeline · Camera2 single-preview Surface renderer + debounce + image renderer experiment"); hint.setPadding(dp(14),0,dp(14),dp(6)); root.addView(hint);
 
         HorizontalScrollView hsv = new HorizontalScrollView(this); hsv.setHorizontalScrollBarEnabled(false); tabBar = new LinearLayout(this); tabBar.setOrientation(LinearLayout.HORIZONTAL); tabBar.setPadding(dp(8),dp(4),dp(8),dp(6)); hsv.addView(tabBar); root.addView(hsv);
         for (String t: new String[]{"Dashboard","Root","Media","Hooks","Logs","Diagnostics"}) { final String ft=t; TextView b=chip(t, tab.equals(t)); b.setOnClickListener(v->{tab=ft; saveSettings(); renderUi();}); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(t.equals("Diagnostics")?112:92),dp(44)); lp.setMargins(dp(3),0,dp(3),0); tabBar.addView(b, lp); }
@@ -185,7 +185,7 @@ public class MainActivity extends Activity {
 
         LinearLayout n=card(); section(n,"Expected v7 hook markers", null);
         n.addView(muted("Required markers: [LOAD] → [HOOKED] → getCameraIdList → getCameraCharacteristics → openCamera"));
-        n.addView(muted("v9.6.3 markers: AutoPipelineJson, Camera2SurfaceShadowJson, SurfaceClassifierJson, Camera2SurfaceRenderJson, provider bridge OK, renderer active, no crash"));
+        n.addView(muted("v9.6.4 markers: AutoPipelineJson, Camera2SurfaceShadowJson, SurfaceClassifierJson, Camera2SurfaceRenderJson, provider bridge OK, renderer active, no crash"));
     }
     private void rootTab(){
         LinearLayout c=card(); section(c,"Root / module paths", "Root is requested once on app start in dev builds. Manual tools stay here."); c.addView(muted("control path: "+ctl)); c.addView(muted("module path: "+ice));

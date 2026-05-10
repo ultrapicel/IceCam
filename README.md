@@ -1,48 +1,58 @@
-# IceCam v9.6.3 — Continuous Surface Renderer
+# IceCam v9.6.4 — Single Preview Surface Renderer
 
-`v9.6.3-safe-surface-classifier` pivots IceCam toward a system-level camera-provider/HAL route. It is still experimental safe Surface classifier enabled under auto-pipeline; provider replacement is not enabled.
+`v9.6.4-single-preview-surface-renderer` continues the Camera2 Surface/CaptureSession path from v9.6.3, but changes the renderer from aggressive multi-surface painting to a conservative single-preview target model.
 
 ## Goal
 
-Stop relying on per-app behavior as the primary architecture. LSPosed remains useful for telemetry and fallback, but the main target is a system-camera path that can affect most apps through Android's normal camera stack.
+IceCam is still aimed at universal Android camera replacement, not a Telegram/Chrome-specific hook. The LSPosed layer remains a diagnostic/fallback layer while the long-term direction is a lower-level system camera/provider/HAL pipeline.
 
-## Added in v9.6.3
+## Added in v9.6.4
 
-- Root-side `system-probe` command.
-- Debug bundle now includes `system_camera_probe/`.
-- Camera provider/HAL inventory:
-  - `dumpsys media.camera`
-  - `service list`
-  - `lshal` camera entries
-  - `/vendor/bin/hw/*camera*`
-  - `/vendor/lib*/hw/*camera*`
-  - VINTF manifest camera references
-  - external camera config discovery
-  - `/dev/video*`, `/dev/media*`, `/sys/class/video4linux`
-  - kernel config probe for V4L2/UVC/v4l2loopback
-  - SELinux camera/provider contexts and AVC denials
-- UI button: Root → Continuous Surface Renderer.
+- Single active preview Surface renderer per process.
+- Surface scoring before rendering.
+- ImageReader/Chrome/WebRTC surfaces stay deny/log-only.
+- 450 ms debounce after Camera2 `addTarget` discovery before selecting the final preview Surface.
+- Existing renderer is stopped when a better preview target is selected.
+- Fail-safe stop on first lock/post/render exception to avoid camera disconnect loops.
+- Provider `media-source` stream proxy so target apps decode media through IceCam provider instead of direct SAF URI.
+- First image renderer path for selected SAF image media:
+  - center-crop/fill transform;
+  - zoom;
+  - mirror;
+  - rotation;
+  - fallback to animated test pattern when image media is unavailable.
+- New logs:
+  - `SurfaceClassifierJson` includes `score`;
+  - `SurfaceSelectJson` shows debounce/candidate/selected events;
+  - `Camera2SurfaceRenderJson` shows selected renderer lifecycle.
 
-## Architectural direction
+## Still not complete
 
-Priority order:
-
-1. External camera/provider emulation if device exposes a usable provider path.
-2. V4L2/UVC-compatible route if kernel/vendor supports it.
-3. Vendor/AIDL camera provider feasibility on Android 14+.
-4. LSPosed Camera2/Camera1 Surface/CaptureSession interception as fallback, not final design.
+- Stable video decoding through MediaCodec.
+- True Camera2 frame replacement without HAL conflict.
+- Telegram render path stabilization.
+- System camera ID/provider/HAL replacement.
+- Vendor provider shim.
 
 ## GitHub Actions artifacts
 
-- `IceCam-app-v9.6.3.apk`
-- `IceCam-root-module-v9.6.3.zip`
-- `IceCam-source-snapshot-v9.6.3.zip`
+- `IceCam-app-v9.6.4.apk`
+- `IceCam-root-module-v9.6.4.zip`
+- `IceCam-source-snapshot-v9.6.4.zip`
 
 ## Test flow
 
 1. Install APK and root module.
 2. Reboot after LSPosed/module update.
-3. Open IceCam.
-4. Root → Continuous Surface Renderer, or Dashboard → normal diagnostic flow.
-5. Export Lite Debug Bundle.
-6. Send `icecam_debug_v9.6.3_<timestamp>.tar.gz`.
+3. Open IceCam and select an image through SAF.
+4. Enable Auto Pipeline / replacement mode.
+5. Test first in system Camera app, then Telegram, then Chrome/WebRTC.
+6. Export Lite Debug Bundle.
+7. Send `icecam_debug_v9.6.4_<timestamp>.tar.gz` plus screenshots.
+
+## Required regression checks
+
+- App must not request `MANAGE_EXTERNAL_STORAGE`.
+- App must not use storage appops/self `pm grant` bootstrap.
+- Hook layer must not call `XposedHelpers.findAndHookMethod(...)`.
+- Target apps must use provider bridge instead of direct `/data/adb` reads/writes.
