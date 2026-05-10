@@ -21,7 +21,7 @@ import com.icecam.dev.renderer.RendererSandbox;
 public class MainActivity extends Activity {
     private static final int REQ_PHOTO = 701;
     private static final int REQ_VIDEO = 702;
-    private static final String APP_VERSION = "v9.4.2-root-bootstrap-cleanup";
+    private static final String APP_VERSION = "v9.4.3-safe-root-bootstrap";
     private final String ctl = "/data/adb/icecam/bin/icecamctl";
     private final String ice = "/data/adb/icecam";
     private String tab = "Dashboard", mode = "log-only", cameraMode = "auto", compatibilityMode = "strict-real", mediaType = "none";
@@ -49,7 +49,7 @@ public class MainActivity extends Activity {
         if (startupRootRequested) return;
         startupRootRequested = true;
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-            runRoot(ctl + " bootstrap-app 2>/dev/null; " + ctl + " status");
+            runRoot(ctl + " bootstrap-app-foreground 2>/dev/null; " + ctl + " status");
         }, 700);
     }
 
@@ -88,8 +88,15 @@ public class MainActivity extends Activity {
     }
 
     private void requestRuntimePermissionsOnly() {
-        if (Build.VERSION.SDK_INT >= 33) requestPermissions(new String[]{Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.CAMERA}, 7);
-        else requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.CAMERA}, 7);
+        ArrayList<String> missing = new ArrayList<>();
+        if (checkSelfPermission(Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) missing.add(Manifest.permission.CAMERA);
+        if (Build.VERSION.SDK_INT >= 33) {
+            if (checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) != android.content.pm.PackageManager.PERMISSION_GRANTED) missing.add(Manifest.permission.READ_MEDIA_IMAGES);
+            if (checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) != android.content.pm.PackageManager.PERMISSION_GRANTED) missing.add(Manifest.permission.READ_MEDIA_VIDEO);
+        } else {
+            if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED) missing.add(Manifest.permission.READ_EXTERNAL_STORAGE);
+        }
+        if (!missing.isEmpty()) requestPermissions(missing.toArray(new String[0]), 7);
     }
 
     private int dp(float v){ return (int)(v*getResources().getDisplayMetrics().density+0.5f); }
@@ -150,7 +157,7 @@ public class MainActivity extends Activity {
     private void renderUi() {
         root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackground(appBg());
         status = tv("IceCam " + APP_VERSION, 20, 1); status.setPadding(dp(14),dp(12),dp(14),dp(6)); root.addView(status);
-        TextView hint = muted("Development build · v9.4.2 root bootstrap + cleanup · no frame injection yet"); hint.setPadding(dp(14),0,dp(14),dp(6)); root.addView(hint);
+        TextView hint = muted("Development build · v9.4.3 safe root bootstrap · no frame injection yet"); hint.setPadding(dp(14),0,dp(14),dp(6)); root.addView(hint);
 
         HorizontalScrollView hsv = new HorizontalScrollView(this); hsv.setHorizontalScrollBarEnabled(false); tabBar = new LinearLayout(this); tabBar.setOrientation(LinearLayout.HORIZONTAL); tabBar.setPadding(dp(8),dp(4),dp(8),dp(6)); hsv.addView(tabBar); root.addView(hsv);
         for (String t: new String[]{"Dashboard","Root","Media","Hooks","Logs","Diagnostics"}) { final String ft=t; TextView b=chip(t, tab.equals(t)); b.setOnClickListener(v->{tab=ft; saveSettings(); renderUi();}); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(t.equals("Diagnostics")?112:92),dp(44)); lp.setMargins(dp(3),0,dp(3),0); tabBar.addView(b, lp); }
@@ -178,7 +185,7 @@ public class MainActivity extends Activity {
 
         LinearLayout n=card(); section(n,"Expected v7 hook markers", null);
         n.addView(muted("Required markers: [LOAD] → [HOOKED] → getCameraIdList → getCameraCharacteristics → openCamera"));
-        n.addView(muted("v9.4.2 required markers: target [LOAD], renderer init/tick, openCamera, createCaptureSession, CaptureRequest target/surface ownership traces"));
+        n.addView(muted("v9.4.3 required markers: target [LOAD], renderer init/tick, openCamera, createCaptureSession, CaptureRequest target/surface ownership traces"));
     }
     private void rootTab(){
         LinearLayout c=card(); section(c,"Root / module paths", "Root is requested once on app start in dev builds. Manual tools stay here."); c.addView(muted("control path: "+ctl)); c.addView(muted("module path: "+ice));
@@ -199,7 +206,7 @@ public class MainActivity extends Activity {
         frame.addView(imagePreview, new FrameLayout.LayoutParams(-1,-1, Gravity.CENTER)); frame.addView(videoPreview, new FrameLayout.LayoutParams(-1,-1, Gravity.CENTER)); updatePreview();
     }
     private void hooksTab(){
-        LinearLayout c=card(); section(c,"Hook configuration", "v9.4.2 keeps passive renderer diagnostics: renderer thread, placeholder producer and owned SurfaceTexture telemetry. Camera frames are not replaced yet."); pillRow(c,"Mode",mode); pillRow(c,"Target",cameraMode); pillRow(c,"Compatibility",compatibilityMode);
+        LinearLayout c=card(); section(c,"Hook configuration", "v9.4.3 keeps passive renderer diagnostics: renderer thread, placeholder producer and owned SurfaceTexture telemetry. Camera frames are not replaced yet."); pillRow(c,"Mode",mode); pillRow(c,"Target",cameraMode); pillRow(c,"Compatibility",compatibilityMode);
         LinearLayout a=card(); section(a,"Mode", null); addBtn(a,"log-only", mode.equals("log-only"),v->{mode="log-only";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(a,"block-open-test", mode.equals("block-open-test"),v->{mode="block-open-test";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(a,"virtual-stub", mode.equals("virtual-stub"),v->{mode="virtual-stub";saveSettings();writeAppConfigViaRoot();renderUi();});
         LinearLayout t=card(); section(t,"Target camera", null); addBtn(t,"auto", cameraMode.equals("auto"),v->{cameraMode="auto";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(t,"back", cameraMode.equals("back"),v->{cameraMode="back";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(t,"front", cameraMode.equals("front"),v->{cameraMode="front";saveSettings();writeAppConfigViaRoot();renderUi();});
         LinearLayout m=card(); section(m,"Compatibility profile mode", "strict-real is default; compatibility/experimental are passive flags in v8.");
@@ -257,7 +264,43 @@ public class MainActivity extends Activity {
             "  \"loop\": "+loop+", \"mirror\": "+mirror+", \"zoom\": "+zoom+", \"rotation\": "+rotation+",\n"+
             "  \"fitMode\": \"fill-center-crop\",\n"+
             "  \"workingPath\": \"/data/adb/icecam/media/source\"\n}"; }
-    private void runRoot(String command){ new Thread(()->{ StringBuilder sb=new StringBuilder(); int exit=-1; try{ Process p=Runtime.getRuntime().exec(new String[]{"su","-c",command}); String so=read(p.getInputStream()), se=read(p.getErrorStream()); exit=p.waitFor(); sb.append("$ su -c ").append(command).append("\n\nstdout:\n").append(so).append("\n\nstderr:\n").append(se).append("\nexitCode=").append(exit); }catch(Exception e){ sb.append("runRoot error: ").append(e); } runOnUiThread(()->out.setText(sb.toString())); }).start(); }
+    private void runRoot(String command){
+        new Thread(() -> {
+            StringBuilder sb = new StringBuilder();
+            int exit = -1;
+            Process p = null;
+            try {
+                ProcessBuilder pb = new ProcessBuilder("su", "-c", command);
+                pb.redirectErrorStream(true);
+                p = pb.start();
+                final Process proc = p;
+                final ByteArrayOutputStream bo = new ByteArrayOutputStream();
+                Thread reader = new Thread(() -> {
+                    try {
+                        InputStream is = proc.getInputStream();
+                        byte[] b = new byte[4096];
+                        int n;
+                        while ((n = is.read(b)) != -1) bo.write(b, 0, n);
+                    } catch (Throwable ignored) {}
+                }, "IceCamRootReader");
+                reader.start();
+                boolean done = p.waitFor(15, java.util.concurrent.TimeUnit.SECONDS);
+                if (!done) {
+                    try { p.destroyForcibly(); } catch (Throwable ignored) {}
+                    sb.append("$ su -c ").append(command).append("\n\nTIMEOUT after 15s");
+                } else {
+                    exit = p.exitValue();
+                    try { reader.join(500); } catch (Throwable ignored) {}
+                    sb.append("$ su -c ").append(command).append("\n\noutput:\n")
+                      .append(bo.toString()).append("\nexitCode=").append(exit);
+                }
+            } catch (Throwable e) {
+                sb.append("runRoot error: ").append(e);
+                try { if (p != null) p.destroyForcibly(); } catch (Throwable ignored) {}
+            }
+            runOnUiThread(() -> { if (out != null) out.setText(sb.toString()); });
+        }, "IceCamRootExec").start();
+    }
     private String read(InputStream is)throws IOException{ ByteArrayOutputStream bo=new ByteArrayOutputStream(); byte[] b=new byte[4096]; int n; while((n=is.read(b))!=-1)bo.write(b,0,n); return bo.toString(); }
     private void dumpCameras(){ try{ CameraManager cm=(CameraManager)getSystemService(CAMERA_SERVICE); StringBuilder sb=new StringBuilder(); for(String id:cm.getCameraIdList()){ CameraCharacteristics cc=cm.getCameraCharacteristics(id); sb.append("id=").append(id).append('\n'); sb.append(" facing=").append(cc.get(CameraCharacteristics.LENS_FACING)).append('\n'); sb.append(" orientation=").append(cc.get(CameraCharacteristics.SENSOR_ORIENTATION)).append('\n'); sb.append(" hardwareLevel=").append(cc.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)).append('\n'); sb.append(" focalLength=").append(Arrays.toString(cc.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS))).append('\n'); sb.append(" fps=").append(Arrays.toString(cc.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES))).append("\n\n"); } out.setText(sb.toString()); }catch(Exception e){ out.setText("Camera dump error: "+e); } }
 }

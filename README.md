@@ -1,8 +1,8 @@
-# IceCam v9.4.2 — Root Bootstrap Cleanup + Renderer Diagnostics
+# IceCam v9.4.3 — Root Bootstrap Cleanup + Renderer Diagnostics
 
-`v9.4.2-root-bootstrap-cleanup` is still passive telemetry only. It does not inject frames and does not replace a camera stream yet.
+`v9.4.3-safe-root-bootstrap` is still passive telemetry only. It does not inject frames and does not replace a camera stream yet.
 
-## Added in v9.4.2
+## Added in v9.4.3
 
 - Root bootstrap from app startup via `icecamctl bootstrap-app`.
 - Root-side permission/appops grant attempt for `com.icecam.dev`.
@@ -19,9 +19,9 @@
 
 ## Expected GitHub Actions artifacts
 
-- `IceCam-app-v9.4.2.apk`
-- `IceCam-root-module-v9.4.2.zip`
-- `IceCam-source-snapshot-v9.4.2.zip`
+- `IceCam-app-v9.4.3.apk`
+- `IceCam-root-module-v9.4.3.zip`
+- `IceCam-source-snapshot-v9.4.3.zip`
 
 ## Test flow
 
@@ -36,4 +36,4 @@
 
 Lite bundle path:
 
-`/sdcard/Download/icecam_debug_v9.4.2_<timestamp>.tar.gz`
+`/sdcard/Download/icecam_debug_v9.4.3_<timestamp>.tar.gz`

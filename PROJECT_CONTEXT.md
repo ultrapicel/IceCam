@@ -1,12 +1,12 @@
 # IceCam Project Context
 
-Current version: v9.4.2.
+Current version: v9.4.3.
 
 Goal: Android app + root module + LSPosed hook layer for broad camera-stack telemetry and future system camera stream replacement on Android 12–15.
 
 Current implementation is passive. It does not inject frames yet.
 
-v9.4.2 adds root startup/bootstrap reliability and cleanup:
+v9.4.3 adds root startup/bootstrap reliability and cleanup:
 
 - app startup runs `icecamctl bootstrap-app` through `su`;
 - root module cleans stale v9.x debug/cache/temp files on install/prepare/start;

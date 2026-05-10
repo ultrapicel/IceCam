@@ -6,7 +6,7 @@ STATE="$ICE/state"
 MEDIA="$ICE/media"
 CACHE="$ICE/cache"
 BIN="$ICE/bin"
-VERSION="v9.4.2"
+VERSION="v9.4.3"
 APP_PKG="com.icecam.dev"
 TARGETS="com.android.camera com.android.chrome org.telegram.messenger org.telegram.messenger.web"
 
@@ -36,21 +36,32 @@ clean_legacy() {
   log_module "legacy cleanup completed"
 }
 
-grant_app_permissions() {
-  # Runtime permissions are requested by UI; root grants make reinstall/startup deterministic.
-  pm grant "$APP_PKG" android.permission.CAMERA 2>/dev/null
-  pm grant "$APP_PKG" android.permission.READ_EXTERNAL_STORAGE 2>/dev/null
-  pm grant "$APP_PKG" android.permission.READ_MEDIA_IMAGES 2>/dev/null
-  pm grant "$APP_PKG" android.permission.READ_MEDIA_VIDEO 2>/dev/null
+mark_root_granted() {
+  mkdir -p "$STATE" 2>/dev/null
+  echo 1 > "$STATE/root_granted" 2>/dev/null
+  echo "$(date '+%F %T')" > "$STATE/root_granted_at" 2>/dev/null
+  chmod 666 "$STATE/root_granted" "$STATE/root_granted_at" 2>/dev/null
+}
+
+set_appops_only() {
+  # Safe while the app is foreground. pm grant may kill/restart the app process on Android.
   appops set "$APP_PKG" CAMERA allow 2>/dev/null
   appops set "$APP_PKG" READ_MEDIA_IMAGES allow 2>/dev/null
   appops set "$APP_PKG" READ_MEDIA_VIDEO allow 2>/dev/null
   appops set "$APP_PKG" READ_EXTERNAL_STORAGE allow 2>/dev/null
   appops set "$APP_PKG" MANAGE_EXTERNAL_STORAGE allow 2>/dev/null
-  echo 1 > "$STATE/root_granted" 2>/dev/null
-  echo "$(date '+%F %T')" > "$STATE/root_granted_at" 2>/dev/null
-  chmod 666 "$STATE/root_granted" "$STATE/root_granted_at" 2>/dev/null
-  log_module "app permission bootstrap completed for $APP_PKG"
+  mark_root_granted
+  log_module "foreground-safe root bootstrap completed for $APP_PKG"
+}
+
+grant_app_permissions() {
+  # Use only from module install/boot/manual repair, not from foreground app startup.
+  pm grant "$APP_PKG" android.permission.CAMERA 2>/dev/null
+  pm grant "$APP_PKG" android.permission.READ_EXTERNAL_STORAGE 2>/dev/null
+  pm grant "$APP_PKG" android.permission.READ_MEDIA_IMAGES 2>/dev/null
+  pm grant "$APP_PKG" android.permission.READ_MEDIA_VIDEO 2>/dev/null
+  set_appops_only
+  log_module "app permission grant bootstrap completed for $APP_PKG"
 }
 
 init_dirs() {
@@ -64,7 +75,7 @@ init_dirs() {
   chmod 666 "$STATE/active" "$STATE/prepared" 2>/dev/null
   [ -f "$CONFIG/app_config.json" ] || cat > "$CONFIG/app_config.json" <<JSON
 {
-  "version":"9.4.2-root-bootstrap-cleanup",
+  "version":"9.4.3-safe-root-bootstrap",
   "active":false,
   "mode":"log-only",
   "cameraMode":"auto",
@@ -250,6 +261,12 @@ case "$1" in
     grant_app_permissions
     echo "bootstrap completed"
     ;;
+  bootstrap-app-foreground)
+    init_dirs
+    clean_legacy
+    set_appops_only
+    echo "foreground bootstrap completed"
+    ;;
   status)
     echo "IceCam status"
     echo "version=$VERSION"
@@ -309,7 +326,7 @@ case "$1" in
     echo 0 > "$STATE/prepared"
     cat > "$CONFIG/app_config.json" <<JSON
 {
-  "version":"9.4.2-root-bootstrap-cleanup",
+  "version":"9.4.3-safe-root-bootstrap",
   "active":false,
   "mode":"log-only",
   "cameraMode":"auto",
@@ -337,7 +354,7 @@ JSON
     echo "logs cleared"
     ;;
   *)
-    echo "usage: icecamctl bootstrap-app|status|prepare-hooks|start|stop|logs|lite-logs|full-logs|clear-logs|reset-dev-data|clean-all"
+    echo "usage: icecamctl bootstrap-app|bootstrap-app-foreground|status|prepare-hooks|start|stop|logs|lite-logs|full-logs|clear-logs|reset-dev-data|clean-all"
     exit 2
     ;;
 esac

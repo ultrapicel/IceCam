@@ -30,7 +30,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static final String SESSION_EVENTS = CACHE_DIR + "/capture_session_events.jsonl";
     private static final String SURFACE_EVENTS = CACHE_DIR + "/surface_events.jsonl";
     private static final String SURFACE_OWNERSHIP_EVENTS = CACHE_DIR + "/surface_ownership_events.jsonl";
-    private static final String VERSION = "9.4.2-root-bootstrap-cleanup";
+    private static final String VERSION = "9.4.3-safe-root-bootstrap";
 
     @Override
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lp) throws Throwable {
@@ -58,7 +58,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     }
 
     private static void ensureRenderer(XC_LoadPackage.LoadPackageParam lp, String reason) {
-        // v9.4.2: do not gate renderer startup on /data/adb active read.
+        // v9.4.3: do not gate renderer startup on /data/adb active read.
         // On Android 13+ target app contexts can hit SELinux EACCES on /data/adb,
         // which made v9.4 report active=false and never start the sandbox.
         try {
@@ -219,7 +219,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     private static void sessionEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p) {
         if (!shouldTrace(lp, action)) return;
-        String json = "{\"version\":\"9.4.2-root-bootstrap-cleanup\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"9.4.3-safe-root-bootstrap\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"active\":" + active()
                 + ",\"mode\":\"" + esc(mode()) + "\",\"mediaExists\":" + new File(MEDIA).exists()
@@ -286,7 +286,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     private static void surfaceEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p) {
         if (!shouldTrace(lp, action)) return;
-        String json = "{\"version\":\"9.4.2-root-bootstrap-cleanup\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"9.4.3-safe-root-bootstrap\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"thread\":\"" + esc(Thread.currentThread().getName())
                 + "\",\"active\":" + active() + ",\"mode\":\"" + esc(mode())
@@ -344,7 +344,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     private static void surfaceOwnerEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p, Object focus) {
         if (!shouldTrace(lp, action)) return;
-        String json = "{\"version\":\"9.4.2-root-bootstrap-cleanup\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"9.4.3-safe-root-bootstrap\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"thread\":\"" + esc(Thread.currentThread().getName())
                 + "\",\"active\":" + active() + ",\"mode\":\"" + esc(mode())
@@ -543,7 +543,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static String profileJson(XC_LoadPackage.LoadPackageParam lp, String id, CameraCharacteristics cc) {
         StringBuilder sb = new StringBuilder();
         sb.append('{');
-        field(sb, "version", "9.4.2-root-bootstrap-cleanup", true);
+        field(sb, "version", "9.4.3-safe-root-bootstrap", true);
         field(sb, "ts", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()), false);
         field(sb, "package", lp.packageName, false);
         field(sb, "process", lp.processName, false);

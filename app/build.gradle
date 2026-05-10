@@ -9,7 +9,7 @@ android {
         minSdk 31
         targetSdk 35
         versionCode 942
-        versionName '9.4.2-root-bootstrap-cleanup'
+        versionName '9.4.3-safe-root-bootstrap'
     }
 }
 
