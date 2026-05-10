@@ -21,7 +21,7 @@ import com.icecam.dev.renderer.RendererSandbox;
 public class MainActivity extends Activity {
     private static final int REQ_PHOTO = 701;
     private static final int REQ_VIDEO = 702;
-    private static final String APP_VERSION = "v9.6.5-immediate-single-preview-renderer";
+    private static final String APP_VERSION = "v9.6.6-sticky-preview-renderer";
     private final String ctl = "/data/adb/icecam/bin/icecamctl";
     private final String ice = "/data/adb/icecam";
     private String tab = "Dashboard", mode = "log-only", cameraMode = "auto", compatibilityMode = "strict-real", mediaType = "none";

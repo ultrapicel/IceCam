@@ -42,7 +42,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static final String SESSION_EVENTS = CACHE_DIR + "/capture_session_events.jsonl";
     private static final String SURFACE_EVENTS = CACHE_DIR + "/surface_events.jsonl";
     private static final String SURFACE_OWNERSHIP_EVENTS = CACHE_DIR + "/surface_ownership_events.jsonl";
-    private static final String VERSION = "v9.6.5-immediate-single-preview-renderer";
+    private static final String VERSION = "v9.6.6-sticky-preview-renderer";
     private static final String PROVIDER_CONFIG_URI = "content://com.icecam.dev.provider/config";
     private static final String PROVIDER_STATE_URI = "content://com.icecam.dev.provider/state";
     private static final String PROVIDER_MEDIA_URI = "content://com.icecam.dev.provider/media-meta";
@@ -626,7 +626,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
             // v9.6.5: restore the visible v9.6.3 behavior for the MIUI/System Camera path.
             // On this stack the preview Surface becomes Canvas-locked by the camera pipeline quickly;
             // waiting 450 ms made lockCanvas() fail with IllegalArgumentException before frame 1.
-            // Keep the v9.6.4 single-renderer guard, but start immediately for the allowlisted
+            // Keep the v9.6.6 single-renderer guard, but start immediately for the allowlisted
             // system camera preview Surface. Other targets still use delayed selection/log-only policy.
             boolean immediateSystemCamera = "com.android.camera".equals(candidate.pkg)
                     && "preview-candidate".equals(decision.kind)
@@ -673,9 +673,19 @@ public class IceCamHook implements IXposedHookLoadPackage {
         if (c == null || c.surface == null) return;
         if (!c.surface.isValid()) { logSurfaceSelect("selected-invalid", c, "skip"); return; }
         if (ACTIVE_RENDERER != null) {
-            if (ACTIVE_RENDERER.id == c.id && ACTIVE_RENDERER.running.get()) {
-                logSurfaceSelect("selected-already-active", c, "keep-current");
-                return;
+            if (ACTIVE_RENDERER.running.get()) {
+                if (ACTIVE_RENDERER.id == c.id) {
+                    logSurfaceSelect("selected-already-active", c, "keep-current same-id frames=" + ACTIVE_RENDERER.frames + " errors=" + ACTIVE_RENDERER.errors);
+                    return;
+                }
+                // v9.6.6 sticky preview: MIUI Camera repeatedly creates wrapper Surface objects
+                // for the same underlying SurfaceTexture. v9.6.5 stopped a working renderer after
+                // ~6 frames and switched to a fresh wrapper that immediately failed lockCanvas().
+                // If the current renderer has produced visible frames and has no errors, keep it.
+                if (ACTIVE_RENDERER.frames > 0 && ACTIVE_RENDERER.errors == 0 && "com.android.camera".equals(c.pkg)) {
+                    logSurfaceSelect("selected-sticky-keep-current", c, "ignore-new-id=" + c.id + " activeId=" + ACTIVE_RENDERER.id + " activeFrames=" + ACTIVE_RENDERER.frames);
+                    return;
+                }
             }
             ACTIVE_RENDERER.stop("new-preview-selected id=" + c.id);
             ACTIVE_RENDERER = null;
@@ -837,7 +847,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
         c.drawRect(8, 8, w - 8, h - 8, p);
         p.setStyle(Paint.Style.FILL);
         p.setTextSize(Math.max(18f, w / 55f));
-        c.drawText("IceCam v9.6.5 image renderer · frame " + frame, 24, Math.min(h - 24, 48), p);
+        c.drawText("IceCam v9.6.6 image renderer · frame " + frame, 24, Math.min(h - 24, 48), p);
     }
 
     private static void drawContinuousPattern(Canvas c, int frame) {
@@ -859,7 +869,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
         p.setStyle(Paint.Style.FILL);
         p.setTextSize(Math.max(28f, w / 24f));
         p.setColor(Color.WHITE);
-        c.drawText("IceCam v9.6.5", 48, Math.min(h - 80, 110), p);
+        c.drawText("IceCam v9.6.6", 48, Math.min(h - 80, 110), p);
         p.setTextSize(Math.max(20f, w / 42f));
         c.drawText("single preview Surface renderer · frame " + frame, 48, Math.min(h - 40, 160), p);
     }
@@ -881,7 +891,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
                 c.drawRect(20, 20, Math.max(60, c.getWidth()-20), Math.max(60, c.getHeight()-20), p);
                 p.setTextSize(Math.max(28f, c.getWidth() / 24f));
                 p.setColor(Color.WHITE);
-                c.drawText("IceCam v9.6.5", 48, Math.min(c.getHeight()-60, 110), p);
+                c.drawText("IceCam v9.6.6", 48, Math.min(c.getHeight()-60, 110), p);
                 p.setTextSize(Math.max(20f, c.getWidth() / 40f));
                 c.drawText("Camera2 surface single paint fallback", 48, Math.min(c.getHeight()-30, 160), p);
                 result = "paint-ok:" + c.getWidth() + "x" + c.getHeight();

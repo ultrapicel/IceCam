@@ -6,7 +6,7 @@ STATE="$ICE/state"
 MEDIA="$ICE/media"
 CACHE="$ICE/cache"
 BIN="$ICE/bin"
-VERSION="v9.6.4"
+VERSION="v9.6.6"
 APP_PKG="com.icecam.dev"
 TARGETS="com.android.camera com.android.chrome org.telegram.messenger org.telegram.messenger.web"
 
@@ -64,7 +64,7 @@ init_dirs() {
   chmod 666 "$STATE/active" "$STATE/prepared" 2>/dev/null
   [ -f "$CONFIG/app_config.json" ] || cat > "$CONFIG/app_config.json" <<JSON
 {
-  "version":"v9.6.4-single-preview-surface-renderer",
+  "version":"v9.6.6-sticky-preview-renderer",
   "active":false,
   "mode":"log-only",
   "cameraMode":"auto",
@@ -135,7 +135,7 @@ collect_system_camera_probe() {
   write_cmd "$OUTDIR/hal/vendor_lib_camera.txt" sh -c "ls -laZ /vendor/lib*/hw/*camera* /odm/lib*/hw/*camera* /system/lib*/hw/*camera* 2>/dev/null || true"
   write_cmd "$OUTDIR/hal/camera_provider_processes.txt" sh -c "ps -A -o USER,PID,PPID,NAME,ARGS 2>/dev/null | grep -Ei 'camera|provider' | grep -v grep || ps -A | grep -Ei 'camera|provider' || true"
 
-  # v9.6.4: deep provider process probe. Read-only only.
+  # v9.6.6: deep provider process probe. Read-only only.
   PIDS=$(ps -A 2>/dev/null | grep -Ei 'camera.*provider|provider.*camera|cameraserver' | grep -v grep | awk '{print $2}' | tr '\n' ' ')
   echo "$PIDS" > "$OUTDIR/provider_proc/provider_pids.txt" 2>&1
   for PID in $PIDS; do
@@ -151,7 +151,7 @@ collect_system_camera_probe() {
     write_cmd "$PD/mountinfo_vendor.txt" sh -c "cat /proc/$PID/mountinfo 2>/dev/null | grep -Ei 'vendor|odm|system|apex|magisk|ksu|overlay|icecam' || true"
   done
 
-  # v9.6.4: init/service and external provider feasibility probe.
+  # v9.6.6: init/service and external provider feasibility probe.
   write_cmd "$OUTDIR/init/init_camera_rc_refs.txt" sh -c "grep -Rni 'camera.*provider\|provider.*camera\|cameraserver\|android.hardware.camera' /vendor/etc/init /odm/etc/init /system/etc/init /system_ext/etc/init /product/etc/init 2>/dev/null || true"
   write_cmd "$OUTDIR/init/init_camera_rc_files.txt" sh -c "find /vendor/etc/init /odm/etc/init /system/etc/init /system_ext/etc/init /product/etc/init -type f -iname '*camera*' -print 2>/dev/null | sort | while read f; do echo '---'\$f; sed -n '1,220p' \$f; done || true"
   write_cmd "$OUTDIR/external/external_provider_bins.txt" sh -c "ls -laZ /vendor/bin/hw/*external*camera* /system/bin/hw/*external*camera* /odm/bin/hw/*external*camera* 2>/dev/null || true"
@@ -169,7 +169,7 @@ collect_system_camera_probe() {
   logcat -d -v threadtime | grep -i 'avc: denied' | grep -iE 'camera|provider|video|v4l|icecam|adb_data_file' | tail -n 800 > "$OUTDIR/selinux/avc_camera_denials.txt" 2>&1
 
   {
-    echo "IceCam v9.6.4 auto-pipeline Camera2 surface shadow assessment"
+    echo "IceCam v9.6.6 auto-pipeline Camera2 surface shadow assessment"
     echo "created=$(date '+%F %T')"
     echo
     echo "Detected signals:"
@@ -465,7 +465,7 @@ case "$1" in
     echo 0 > "$STATE/prepared"
     cat > "$CONFIG/app_config.json" <<JSON
 {
-  "version":"v9.6.4-single-preview-surface-renderer",
+  "version":"v9.6.6-sticky-preview-renderer",
   "active":false,
   "mode":"log-only",
   "cameraMode":"auto",

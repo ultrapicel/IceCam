@@ -1,6 +1,6 @@
 # IceCam Project Context
 
-Current version: v9.6.5-immediate-single-preview-renderer.
+Current version: v9.6.6-sticky-preview-renderer.
 
 Main direction: universal system-level Android camera replacement. LSPosed hooks are telemetry/fallback; the preferred future route remains Camera2/CaptureSession/Surface path first, then camera-provider/HAL/vendor shim feasibility.
 

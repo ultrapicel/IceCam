@@ -11,7 +11,7 @@ import android.os.ParcelFileDescriptor;
 import java.io.FileNotFoundException;
 
 /**
- * v9.6.4 read-only IPC bridge for LSPosed target processes.
+ * v9.6.6 read-only IPC bridge for LSPosed target processes.
  *
  * Target apps must not read /data/adb/icecam directly: SELinux blocks
  * untrusted_app/isolated_app domains on Android 12-15. This provider exposes
@@ -23,7 +23,7 @@ public class IceCamStateProvider extends ContentProvider {
     public static final Uri STATE_URI = Uri.parse("content://" + AUTHORITY + "/state");
     public static final Uri MEDIA_META_URI = Uri.parse("content://" + AUTHORITY + "/media-meta");
     public static final Uri MEDIA_SOURCE_URI = Uri.parse("content://" + AUTHORITY + "/media-source");
-    private static final String VERSION = "v9.6.4-single-preview-surface-renderer";
+    private static final String VERSION = "v9.6.6-sticky-preview-renderer";
 
     @Override public boolean onCreate() { return true; }
 

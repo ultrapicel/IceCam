@@ -1,6 +1,6 @@
-# IceCam v9.6.5 — Single Preview Surface Renderer
+# IceCam v9.6.6 — Single Preview Surface Renderer
 
-`v9.6.5-immediate-single-preview-renderer` continues the Camera2 Surface/CaptureSession path from v9.6.3, but changes the renderer from aggressive multi-surface painting to a conservative single-preview target model.
+`v9.6.6-sticky-preview-renderer` continues the Camera2 Surface/CaptureSession path from v9.6.3, but changes the renderer from aggressive multi-surface painting to a conservative single-preview target model.
 
 ## Goal
 
