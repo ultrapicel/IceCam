@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      ICECAM_VERSION: v9.6.1.1
+      ICECAM_VERSION: v9.6.2
       GRADLE_VERSION: 8.7
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk

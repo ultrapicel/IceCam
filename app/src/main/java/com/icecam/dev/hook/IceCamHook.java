@@ -38,7 +38,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static final String SESSION_EVENTS = CACHE_DIR + "/capture_session_events.jsonl";
     private static final String SURFACE_EVENTS = CACHE_DIR + "/surface_events.jsonl";
     private static final String SURFACE_OWNERSHIP_EVENTS = CACHE_DIR + "/surface_ownership_events.jsonl";
-    private static final String VERSION = "v9.6.1.1.1-auto-pipeline-buildfix";
+    private static final String VERSION = "v9.6.2-continuous-surface-renderer";
     private static final String PROVIDER_CONFIG_URI = "content://com.icecam.dev.provider/config";
     private static final String PROVIDER_STATE_URI = "content://com.icecam.dev.provider/state";
     private static final String PROVIDER_MEDIA_URI = "content://com.icecam.dev.provider/media-meta";
@@ -271,6 +271,8 @@ public class IceCamHook implements IXposedHookLoadPackage {
         if (surface != null) {
             hookAll(surface, "release", new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam p) {
+                    stopSurfaceRender(arg(p, 0, null), "Surface.release.this-missing");
+                    stopSurfaceRender(p.thisObject, "Surface.release");
                     surfaceEvent(lp, "Surface.release", p);
                 }
             });
@@ -552,10 +554,125 @@ public class IceCamHook implements IXposedHookLoadPackage {
                 + "\",\"surface\":\"" + esc(objectDetail(s)) + "\",\"mode\":\"" + esc(mode()) + "\"}";
         try { Log.i(TAG, "Camera2SurfaceShadowJson " + json); } catch (Throwable ignored) {}
         xlog("IceCam/Hook Camera2SurfaceShadowJson " + json);
-        // v9.6.1.1 intentionally performs a conservative paint probe only. On many Camera2 preview
-        // surfaces lockCanvas() is rejected because the camera HAL already owns the producer side.
-        // We attempt a single non-fatal draw to classify whether this surface can be painted by app process.
-        tryPaintSurfaceOnce(lp, s, source, id);
+        // v9.6.2 starts a bounded continuous renderer. It is still experimental and non-destructive:
+        // if lockCanvas() fails or the Surface becomes invalid, the loop stops and the app falls back
+        // to the normal camera pipeline.
+        startContinuousSurfaceRenderer(lp, s, source, id);
+    }
+
+    private static final java.util.Map<Integer, SurfaceRenderLoop> SURFACE_RENDERERS = new java.util.concurrent.ConcurrentHashMap<Integer, SurfaceRenderLoop>();
+
+    private static void startContinuousSurfaceRenderer(XC_LoadPackage.LoadPackageParam lp, Surface s, String source, int id) {
+        if (SURFACE_RENDERERS.containsKey(id)) return;
+        SurfaceRenderLoop loop = new SurfaceRenderLoop(lp.packageName, lp.processName, s, source, id);
+        SURFACE_RENDERERS.put(id, loop);
+        loop.start();
+    }
+
+    private static void stopSurfaceRender(Object surfaceObj, String reason) {
+        if (!(surfaceObj instanceof Surface)) return;
+        int id = System.identityHashCode(surfaceObj);
+        PAINTED_SURFACES.remove(id);
+        SurfaceRenderLoop loop = SURFACE_RENDERERS.remove(id);
+        if (loop != null) loop.stop(reason);
+    }
+
+    private static class SurfaceRenderLoop implements Runnable {
+        final String pkg;
+        final String proc;
+        final Surface surface;
+        final String source;
+        final int id;
+        final java.util.concurrent.atomic.AtomicBoolean running = new java.util.concurrent.atomic.AtomicBoolean(true);
+        Thread thread;
+        int frames;
+        int errors;
+        long startedAt;
+
+        SurfaceRenderLoop(String pkg, String proc, Surface surface, String source, int id) {
+            this.pkg = pkg;
+            this.proc = proc;
+            this.surface = surface;
+            this.source = source;
+            this.id = id;
+        }
+
+        void start() {
+            startedAt = System.currentTimeMillis();
+            thread = new Thread(this, "IceCamSurfaceRenderer-" + id);
+            thread.setDaemon(true);
+            logSurfaceRender("surface_render_start", "source=" + source + " surface=" + surfaceOrObjectDetails(surface));
+            try { thread.start(); } catch (Throwable t) { running.set(false); logSurfaceRender("surface_render_error", shortErr(t)); }
+        }
+
+        void stop(String reason) {
+            running.set(false);
+            logSurfaceRender("surface_render_stop", "reason=" + reason + " frames=" + frames + " errors=" + errors);
+        }
+
+        public void run() {
+            // Bounded first experiment: enough time to observe visibility, not enough to hang a target app forever.
+            final long maxMs = 45000L;
+            final int frameDelayMs = 66; // ~15 FPS, safer than 30 FPS for lockCanvas probes.
+            while (running.get() && surfaceShadowEnabled() && (System.currentTimeMillis() - startedAt) < maxMs) {
+                Canvas c = null;
+                try {
+                    if (!surface.isValid()) { errors++; logSurfaceRender("surface_render_error", "invalid-surface"); break; }
+                    c = surface.lockCanvas(null);
+                    if (c == null) { errors++; logSurfaceRender("surface_render_error", "lock-null"); break; }
+                    drawContinuousPattern(c, frames);
+                    frames++;
+                    if (frames == 1 || frames == 15 || frames == 60 || frames % 150 == 0) {
+                        logSurfaceRender("surface_render_frame", "frame=" + frames + " size=" + c.getWidth() + "x" + c.getHeight());
+                    }
+                } catch (Throwable t) {
+                    errors++;
+                    logSurfaceRender("surface_render_error", shortErr(t));
+                    if (errors >= 3) break;
+                } finally {
+                    try { if (c != null) surface.unlockCanvasAndPost(c); } catch (Throwable t) { errors++; logSurfaceRender("surface_render_error", "unlock=" + shortErr(t)); }
+                }
+                try { Thread.sleep(frameDelayMs); } catch (Throwable ignored) {}
+            }
+            running.set(false);
+            SURFACE_RENDERERS.remove(id);
+            PAINTED_SURFACES.remove(id);
+            logSurfaceRender("surface_render_stop", "frames=" + frames + " errors=" + errors + " ageMs=" + (System.currentTimeMillis()-startedAt));
+        }
+
+        void logSurfaceRender(String action, String detail) {
+            String json = "{\"version\":\"" + VERSION + "\",\"package\":\"" + esc(pkg)
+                    + "\",\"process\":\"" + esc(proc) + "\",\"action\":\"" + esc(action)
+                    + "\",\"surfaceId\":" + id + ",\"source\":\"" + esc(source)
+                    + "\",\"frames\":" + frames + ",\"errors\":" + errors
+                    + ",\"mode\":\"" + esc(mode()) + "\",\"detail\":\"" + esc(detail) + "\"}";
+            try { Log.i(TAG, "Camera2SurfaceRenderJson " + json); } catch (Throwable ignored) {}
+            xlog("IceCam/Hook Camera2SurfaceRenderJson " + json);
+        }
+    }
+
+    private static void drawContinuousPattern(Canvas c, int frame) {
+        int w = Math.max(1, c.getWidth());
+        int h = Math.max(1, c.getHeight());
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        int phase = frame % 255;
+        c.drawColor(Color.rgb((phase / 3) % 80, 12, 28 + (phase % 80)));
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(Color.rgb(20, 110 + (phase % 100), 220));
+        int box = Math.max(80, Math.min(w, h) / 5);
+        int x = 20 + ((frame * 17) % Math.max(1, w - box - 40));
+        int y = 70 + ((frame * 11) % Math.max(1, h - box - 100));
+        c.drawRect(x, y, x + box, y + box, p);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(Math.max(4f, w / 240f));
+        p.setColor(Color.WHITE);
+        c.drawRect(18, 18, w - 18, h - 18, p);
+        p.setStyle(Paint.Style.FILL);
+        p.setTextSize(Math.max(28f, w / 24f));
+        p.setColor(Color.WHITE);
+        c.drawText("IceCam v9.6.2", 48, Math.min(h - 80, 110), p);
+        p.setTextSize(Math.max(20f, w / 42f));
+        c.drawText("continuous Surface renderer · frame " + frame, 48, Math.min(h - 40, 160), p);
     }
 
     private static void tryPaintSurfaceOnce(XC_LoadPackage.LoadPackageParam lp, Surface s, String source, int id) {
@@ -572,9 +689,9 @@ public class IceCamHook implements IXposedHookLoadPackage {
                 c.drawRect(20, 20, Math.max(60, c.getWidth()-20), Math.max(60, c.getHeight()-20), p);
                 p.setTextSize(Math.max(28f, c.getWidth() / 24f));
                 p.setColor(Color.WHITE);
-                c.drawText("IceCam v9.6.1.1", 48, Math.min(c.getHeight()-60, 110), p);
+                c.drawText("IceCam v9.6.2", 48, Math.min(c.getHeight()-60, 110), p);
                 p.setTextSize(Math.max(20f, c.getWidth() / 40f));
-                c.drawText("Camera2 surface paint probe", 48, Math.min(c.getHeight()-30, 160), p);
+                c.drawText("Camera2 surface single paint fallback", 48, Math.min(c.getHeight()-30, 160), p);
                 result = "paint-ok:" + c.getWidth() + "x" + c.getHeight();
             }
         } catch (Throwable t) {
