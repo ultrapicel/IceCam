@@ -7,6 +7,7 @@ import android.hardware.camera2.params.StreamConfigurationMap;
 import android.util.Range;
 import android.util.Size;
 import android.view.Surface;
+import com.icecam.dev.renderer.RendererSandbox;
 import java.io.*;
 import java.lang.reflect.Member;
 import java.text.SimpleDateFormat;
@@ -55,6 +56,17 @@ public class IceCamHook implements IXposedHookLoadPackage {
         safeInit("hookSurfaceOwnershipTrace", new Runnable() { public void run() { hookSurfaceOwnershipTrace(lp); } });
     }
 
+    private static void ensureRenderer(XC_LoadPackage.LoadPackageParam lp, String reason) {
+        if (!active()) return;
+        try {
+            RendererSandbox.ensureStarted(lp.packageName, lp.processName);
+            log("[RendererSandbox] ensure reason=" + reason + " " + RendererSandbox.snapshot());
+        } catch (Throwable t) {
+            log("[ERR] RendererSandbox ensure " + reason + " " + stack(t));
+            xlog(t);
+        }
+    }
+
     private void safeInit(String name, Runnable r) {
         try {
             r.run();
@@ -98,6 +110,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
         hookAll(cm, "openCamera", new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
                 Object id = arg(p, 0, "?");
+                ensureRenderer(lp, "CameraManager.openCamera");
                 logEvent(lp, "[Camera2] openCamera id=" + id, p);
             }
             @Override protected void afterHookedMethod(MethodHookParam p) {
@@ -127,6 +140,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
         hookAll(cd, "createCaptureSession", new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
+                ensureRenderer(lp, "CameraDevice.createCaptureSession");
                 logEvent(lp, "[Camera2] CameraDevice.createCaptureSession", p);
                 surfaceOwnerEvent(lp, "CameraDevice.createCaptureSession", p, null);
             }
@@ -194,7 +208,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     private static void sessionEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p) {
         if (!shouldTrace(lp, action)) return;
-        String json = "{\"version\":\"9.3.2-noise-filter-surface-map\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"9.4-renderer-sandbox\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"active\":" + active()
                 + ",\"mode\":\"" + esc(mode()) + "\",\"mediaExists\":" + new File(MEDIA).exists()
@@ -261,7 +275,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     private static void surfaceEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p) {
         if (!shouldTrace(lp, action)) return;
-        String json = "{\"version\":\"9.3.2-noise-filter-surface-map\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"9.4-renderer-sandbox\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"thread\":\"" + esc(Thread.currentThread().getName())
                 + "\",\"active\":" + active() + ",\"mode\":\"" + esc(mode())
@@ -319,7 +333,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     private static void surfaceOwnerEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p, Object focus) {
         if (!shouldTrace(lp, action)) return;
-        String json = "{\"version\":\"9.3.2-noise-filter-surface-map\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"9.4-renderer-sandbox\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"thread\":\"" + esc(Thread.currentThread().getName())
                 + "\",\"active\":" + active() + ",\"mode\":\"" + esc(mode())
@@ -442,6 +456,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
         hookAll(cam, "open", new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
                 Object id = arg(p, 0, "default");
+                ensureRenderer(lp, "Camera1.open");
                 logEvent(lp, "[Camera1] open id=" + id, p);
             }
             @Override protected void afterHookedMethod(MethodHookParam p) {
@@ -517,7 +532,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static String profileJson(XC_LoadPackage.LoadPackageParam lp, String id, CameraCharacteristics cc) {
         StringBuilder sb = new StringBuilder();
         sb.append('{');
-        field(sb, "version", "9.3.2-noise-filter-surface-map", true);
+        field(sb, "version", "9.4-renderer-sandbox", true);
         field(sb, "ts", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()), false);
         field(sb, "package", lp.packageName, false);
         field(sb, "process", lp.processName, false);

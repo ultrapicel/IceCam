@@ -8,8 +8,8 @@ android {
         applicationId 'com.icecam.dev'
         minSdk 31
         targetSdk 35
-        versionCode 932
-        versionName '9.3.2-noise-filter-surface-map'
+        versionCode 940
+        versionName '9.4-renderer-sandbox'
     }
 }
 

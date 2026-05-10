@@ -1,23 +1,38 @@
-# IceCam v9.3.2 — Noise-Filtered Surface Ownership Mapping
+# IceCam v9.4 — Renderer Sandbox
 
-`v9.3.2-noise-filter-surface-map` is still **passive telemetry only**. It does not inject frames and does not replace a camera stream yet.
+`v9.4-renderer-sandbox` is still **passive telemetry only**. It does not inject frames and does not replace a camera stream yet.
 
-This build moves from basic Surface tracing to ownership mapping:
+This build adds the first internal renderer sandbox layer while preserving the v9.3.3 camera/surface tracing path.
 
-- `CameraManager` / `CameraDevice` / `CameraCaptureSession` hooks remain active.
-- `CaptureRequest.Builder.addTarget/removeTarget/build` is traced.
-- `OutputConfiguration.addSurface/removeSurface/getSurfaces` is traced.
-- Surface ownership events are exported through logcat bridge.
-- Lite debug bundle stays small and includes only required development logs.
+## Added in v9.4
+
+- Passive `RendererSandbox` class.
+- Internal `HandlerThread` named `IceCamRendererSandbox`.
+- Owned `SurfaceTexture` + owned `Surface` allocation.
+- Placeholder `Bitmap` producer metadata.
+- 30 fps timing tick telemetry.
+- New cache file: `/data/adb/icecam/cache/renderer_events.jsonl`.
+- Debug bundle now includes renderer events and renderer counters.
+
+Renderer startup is gated behind camera activity and `/data/adb/icecam/state/active=1`; it is not started for every loaded process.
+
+## Still not implemented
+
+- Fake frame injection.
+- Target Surface replacement.
+- OpenGL compositing.
+- MediaCodec decode/render pipeline.
+- Virtual camera provider.
+- Native/NDK camera path.
 
 ## GitHub Actions artifacts
 
 The workflow produces:
 
-- `IceCam-app-v9.3.2.apk`
-- `IceCam-root-module-v9.3.2.zip`
-- `IceCam-source-snapshot-v9.3.2.zip`
-- `build-info-v9.3.txt`
+- `IceCam-app-v9.4.apk`
+- `IceCam-root-module-v9.4.zip`
+- `IceCam-source-snapshot-v9.4.zip`
+- `build-info.txt`
 
 ## Install / test matrix
 
@@ -36,17 +51,18 @@ Use Dashboard steps:
 2. Prepare Hook Layer
 3. Select Photo or Video
 4. Start Replacement
-5. Open target camera manually: Camera / Telegram / Chrome
+5. Open target camera manually: Camera / Telegram / Chrome / another target app
 6. Export Lite Debug Bundle
 
 Expected output:
 
-`/sdcard/Download/icecam_debug_v9.3_<timestamp>.tar.gz`
+`/sdcard/Download/icecam_debug_v9.4_<timestamp>.tar.gz`
 
 Important files inside:
 
 - `summary.txt`
 - `icecam/logs/hook.log`
+- `icecam/cache/renderer_events.jsonl`
 - `icecam/cache/camera_profiles_from_logcat.jsonl`
 - `icecam/cache/capture_session_events_from_logcat.jsonl`
 - `icecam/cache/surface_events_from_logcat.jsonl`
@@ -54,17 +70,16 @@ Important files inside:
 - `media/source.meta.json`
 - `logcat/icecam_camera_lsposed_filtered.txt`
 
-## Success criteria for v9.3
+## Success criteria for v9.4
 
 The bundle should show:
 
 - `[LOAD]`
 - `openCamera`
-- `getCameraCharacteristics`
 - `createCaptureSession`
-- `setRepeatingRequest` or `capture`
-- `SurfaceJson`
 - `SurfaceOwnerJson`
 - `CaptureRequest.Builder.addTarget` and/or `requestTargets`
+- `RendererSandbox` init/tick events
+- `renderer_event_count` greater than zero in `summary.txt`
 
-If these are present, the next stage is v9.4: internal renderer sandbox and placeholder frame producer. Frame injection remains disabled in v9.3.
+If these are present, the next stage is v9.5 experimental Surface injection. Frame injection remains disabled in v9.4.

@@ -6,22 +6,22 @@ STATE="$ICE/state"
 MEDIA="$ICE/media"
 CACHE="$ICE/cache"
 BIN="$ICE/bin"
-VERSION="v9.3.2"
+VERSION="v9.4"
 APP_PKG="com.icecam.dev"
 TARGETS="com.android.camera com.android.chrome org.telegram.messenger org.telegram.messenger.web"
 
 init_dirs() {
   mkdir -p "$BIN" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE"
-  touch "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" "$CACHE/surface_ownership_events.jsonl"
+  touch "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" "$CACHE/surface_ownership_events.jsonl" "$CACHE/renderer_events.jsonl"
   chmod 755 /data/adb 2>/dev/null
   chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
-  chmod 666 "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" "$CACHE/surface_ownership_events.jsonl" 2>/dev/null
+  chmod 666 "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" "$CACHE/surface_ownership_events.jsonl" "$CACHE/renderer_events.jsonl" 2>/dev/null
   [ -f "$STATE/active" ] || echo 0 > "$STATE/active"
   [ -f "$STATE/prepared" ] || echo 0 > "$STATE/prepared"
   chmod 666 "$STATE/active" "$STATE/prepared" 2>/dev/null
   [ -f "$CONFIG/app_config.json" ] || cat > "$CONFIG/app_config.json" <<JSON
 {
-  "version":"9.3.2-noise-filter-surface-map",
+  "version":"9.4-renderer-sandbox",
   "active":false,
   "mode":"log-only",
   "cameraMode":"auto",
@@ -29,7 +29,7 @@ init_dirs() {
   "mediaType":"none",
   "mediaPath":"/data/adb/icecam/media/source",
   "mediaMetaPath":"/data/adb/icecam/media/source.meta.json",
-  "pipelineStage":"surface-ownership-noise-filter"
+  "pipelineStage":"renderer-sandbox-passive"
 }
 JSON
   chmod 666 "$CONFIG/app_config.json" 2>/dev/null
@@ -68,7 +68,7 @@ collect_lite_debug_bundle() {
   rm -rf "$TMP"
   mkdir -p "$TMP" "$TMP/icecam/logs" "$TMP/icecam/config" "$TMP/icecam/state" "$TMP/icecam/cache" "$TMP/media" "$TMP/logcat" "$TMP/system" "$TMP/camera" "$TMP/packages"
 
-  FILTER_RE='IceCam/Hook|ProfileCacheJson|CaptureSessionJson|SurfaceOwnerJson|AccessProbe|LSPosed|Xposed|CameraManager|CameraDevice|CameraCaptureSession|CaptureRequest|OutputConfiguration|CameraService|CameraProvider|android.hardware.Camera|openCamera|getCameraIdList|getCameraCharacteristics|createCaptureSession|createCaptureRequest|setRepeatingRequest|addTarget|removeTarget|SurfaceJson|SurfaceTexture|ImageReader'
+  FILTER_RE='IceCam/Hook|ProfileCacheJson|CaptureSessionJson|SurfaceOwnerJson|RendererSandbox|AccessProbe|LSPosed|Xposed|CameraManager|CameraDevice|CameraCaptureSession|CaptureRequest|OutputConfiguration|CameraService|CameraProvider|android.hardware.Camera|openCamera|getCameraIdList|getCameraCharacteristics|createCaptureSession|createCaptureRequest|setRepeatingRequest|addTarget|removeTarget|SurfaceJson|SurfaceTexture|ImageReader|RendererSandbox'
   TARGET_EVENT_RE='package=(com.android.camera|com.android.chrome|org.telegram.messenger|org.telegram.messenger.web)|"package":"(com.android.camera|com.android.chrome|org.telegram.messenger|org.telegram.messenger.web)"'
 
   echo "IceCam lite debug bundle $VERSION" > "$TMP/summary.txt"
@@ -93,6 +93,7 @@ collect_lite_debug_bundle() {
   cp "$CACHE/capture_session_events.jsonl" "$TMP/icecam/cache/capture_session_events.jsonl" 2>/dev/null
   cp "$CACHE/surface_events.jsonl" "$TMP/icecam/cache/surface_events.jsonl" 2>/dev/null
   cp "$CACHE/surface_ownership_events.jsonl" "$TMP/icecam/cache/surface_ownership_events.jsonl" 2>/dev/null
+  cp "$CACHE/renderer_events.jsonl" "$TMP/icecam/cache/renderer_events.jsonl" 2>/dev/null
 
   ls -laR "$ICE" > "$TMP/icecam/tree.txt" 2>&1
   { ls -ld /data/adb "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE"; ls -l "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE"; } > "$TMP/icecam/permissions.txt" 2>&1
@@ -103,10 +104,10 @@ collect_lite_debug_bundle() {
   [ -e "$MEDIA/source.meta.json" ] && cp "$MEDIA/source.meta.json" "$TMP/media/source.meta.json" 2>/dev/null
 
   logcat -d -v threadtime | grep -E "$FILTER_RE" | grep -v '"package":"com.icecam.dev"' | grep -v 'package=com.icecam.dev' | grep -v 'Surface.isValid' | tail -n 6000 > "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>&1
-  grep -E 'IceCam/Hook|ProfileCacheJson|CaptureSessionJson|SurfaceOwnerJson|AccessProbe' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" > "$TMP/logcat/icecam_only.txt" 2>/dev/null
+  grep -E 'IceCam/Hook|ProfileCacheJson|CaptureSessionJson|SurfaceOwnerJson|RendererSandbox|AccessProbe' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" > "$TMP/logcat/icecam_only.txt" 2>/dev/null
   grep -E "$TARGET_EVENT_RE" "$TMP/logcat/icecam_only.txt" > "$TMP/logcat/target_icecam_events.txt" 2>/dev/null
   grep -E 'LSPosed|Xposed' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" | grep -E 'IceCam|com.android.camera|com.android.chrome|org.telegram' | tail -n 1000 > "$TMP/logcat/lsposed_only.txt" 2>/dev/null
-  grep -E 'CameraManager|CameraDevice|CameraCaptureSession|CaptureRequest|OutputConfiguration|CameraService|CameraProvider|android.hardware.Camera|openCamera|getCameraIdList|getCameraCharacteristics|createCaptureSession|createCaptureRequest|setRepeatingRequest|addTarget|removeTarget|SurfaceOwnerJson|SurfaceJson|SurfaceTexture|ImageReader' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" > "$TMP/logcat/camera_only.txt" 2>/dev/null
+  grep -E 'CameraManager|CameraDevice|CameraCaptureSession|CaptureRequest|OutputConfiguration|CameraService|CameraProvider|android.hardware.Camera|openCamera|getCameraIdList|getCameraCharacteristics|createCaptureSession|createCaptureRequest|setRepeatingRequest|addTarget|removeTarget|SurfaceOwnerJson|SurfaceJson|SurfaceTexture|ImageReader|RendererSandbox' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" > "$TMP/logcat/camera_only.txt" 2>/dev/null
   grep 'ProfileCacheJson' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" | sed 's/^.*ProfileCacheJson //' > "$TMP/icecam/cache/camera_profiles_from_logcat.jsonl" 2>/dev/null
   grep 'CaptureSessionJson' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" | sed 's/^.*CaptureSessionJson //' > "$TMP/icecam/cache/capture_session_events_from_logcat.jsonl" 2>/dev/null
   grep 'SurfaceJson' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" | sed 's/^.*SurfaceJson //' > "$TMP/icecam/cache/surface_events_from_logcat.jsonl" 2>/dev/null
@@ -149,6 +150,7 @@ collect_lite_debug_bundle() {
   echo "profile_json_count=$(wc -l < "$TMP/icecam/cache/camera_profiles_from_logcat.jsonl" 2>/dev/null)" >> "$TMP/summary.txt"
   echo "surface_json_count=$(wc -l < "$TMP/icecam/cache/surface_events_from_logcat.jsonl" 2>/dev/null)" >> "$TMP/summary.txt"
   echo "surface_ownership_count=$(wc -l < "$TMP/icecam/cache/surface_ownership_from_logcat.jsonl" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "renderer_event_count=$(wc -l < "$TMP/icecam/cache/renderer_events.jsonl" 2>/dev/null)" >> "$TMP/summary.txt"
   echo "capture_request_target_count=$(grep -c 'CaptureRequest.Builder.addTarget\|requestTargets' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>/dev/null)" >> "$TMP/summary.txt"
 
   find "$TMP" -type f -size +800k -exec sh -c 'tail -c 800000 "$1" > "$1.trim" && mv "$1.trim" "$1"' _ {} \; 2>/dev/null
@@ -216,14 +218,14 @@ case "$1" in
     [ -f "$STATE/active" ] || echo 0 > "$STATE/active"
     chmod 755 /data/adb 2>/dev/null
     chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
-    chmod 666 "$STATE/active" "$STATE/prepared" "$CONFIG/app_config.json" "$LOGS/hook.log" "$LOGS/module.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" "$CACHE/surface_ownership_events.jsonl" 2>/dev/null
+    chmod 666 "$STATE/active" "$STATE/prepared" "$CONFIG/app_config.json" "$LOGS/hook.log" "$LOGS/module.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" "$CACHE/surface_ownership_events.jsonl" "$CACHE/renderer_events.jsonl" 2>/dev/null
     echo "prepared hooks"
     ;;
   start)
     echo 1 > "$STATE/active"
     chmod 666 "$STATE/active" 2>/dev/null
     chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
-    chmod 666 "$LOGS/hook.log" "$CONFIG/app_config.json" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" "$CACHE/surface_ownership_events.jsonl" 2>/dev/null
+    chmod 666 "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" "$CACHE/surface_ownership_events.jsonl" "$CACHE/renderer_events.jsonl" 2>/dev/null
     logcat -c 2>/dev/null
     echo "$(date '+%F %T') replacement start requested" >> "$LOGS/hook.log"
     echo "replacement active"
@@ -232,7 +234,7 @@ case "$1" in
     echo 0 > "$STATE/active"
     chmod 666 "$STATE/active" 2>/dev/null
     chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
-    chmod 666 "$LOGS/hook.log" "$CONFIG/app_config.json" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" "$CACHE/surface_ownership_events.jsonl" 2>/dev/null
+    chmod 666 "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" "$CACHE/surface_ownership_events.jsonl" "$CACHE/renderer_events.jsonl" 2>/dev/null
     echo "$(date '+%F %T') replacement stop requested" >> "$LOGS/hook.log"
     echo "replacement stopped"
     ;;
@@ -242,15 +244,43 @@ case "$1" in
   full-logs|full-debug-bundle)
     collect_full_debug_bundle
     ;;
+  reset-dev-data)
+    rm -rf "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
+    mkdir -p "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE"
+    touch "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" "$CACHE/surface_ownership_events.jsonl" "$CACHE/renderer_events.jsonl"
+    echo 0 > "$STATE/active"
+    echo 0 > "$STATE/prepared"
+    cat > "$CONFIG/app_config.json" <<JSON
+{
+  "version":"9.4-renderer-sandbox",
+  "active":false,
+  "mode":"log-only",
+  "cameraMode":"auto",
+  "compatibilityMode":"strict-real",
+  "mediaType":"none",
+  "mediaPath":"/data/adb/icecam/media/source",
+  "mediaMetaPath":"/data/adb/icecam/media/source.meta.json",
+  "pipelineStage":"renderer-sandbox-passive"
+}
+JSON
+    chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
+    chmod 666 "$LOGS"/*.log "$STATE/active" "$STATE/prepared" "$CONFIG/app_config.json" "$CACHE"/* 2>/dev/null
+    logcat -c 2>/dev/null
+    echo "old dev data reset"
+    ;;
+  clean-all)
+    rm -rf "$ICE" 2>/dev/null
+    echo "icecam data removed"
+    ;;
   clear-logs)
     rm -f "$LOGS"/*.log
-    touch "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" "$CACHE/surface_ownership_events.jsonl"
-    chmod 666 "$LOGS"/*.log 2>/dev/null
+    touch "$LOGS/module.log" "$LOGS/hook.log" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" "$CACHE/surface_ownership_events.jsonl" "$CACHE/renderer_events.jsonl"
+    chmod 666 "$LOGS"/*.log "$CACHE"/* 2>/dev/null
     logcat -c 2>/dev/null
     echo "logs cleared"
     ;;
   *)
-    echo "usage: icecamctl status|prepare-hooks|start|stop|logs|lite-logs|full-logs|clear-logs"
+    echo "usage: icecamctl status|prepare-hooks|start|stop|logs|lite-logs|full-logs|clear-logs|reset-dev-data|clean-all"
     exit 2
     ;;
 esac

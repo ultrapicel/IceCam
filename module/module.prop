@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam v9.3.2 Noise Filter Surface Mapper
-version=9.3.2-noise-filter-surface-map
-versionCode=932
+name=IceCam v9.4 Renderer Sandbox
+version=9.4-renderer-sandbox
+versionCode=940
 author=IceCam
-summary=IceCam root control layer, LSPosed telemetry, CameraCharacteristics cache, capture-session trace, and Surface ownership mapping
+summary=IceCam root control layer, LSPosed telemetry, profile cache, lite debug bundle, startup root check, settings persistence, cleanup, and Surface ownership mapping
