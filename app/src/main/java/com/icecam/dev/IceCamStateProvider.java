@@ -9,7 +9,7 @@ import android.net.Uri;
 import android.os.Build;
 
 /**
- * v9.6.0 read-only IPC bridge for LSPosed target processes.
+ * v9.6.1 read-only IPC bridge for LSPosed target processes.
  *
  * Target apps must not read /data/adb/icecam directly: SELinux blocks
  * untrusted_app/isolated_app domains on Android 12-15. This provider exposes
@@ -20,7 +20,7 @@ public class IceCamStateProvider extends ContentProvider {
     public static final Uri CONFIG_URI = Uri.parse("content://" + AUTHORITY + "/config");
     public static final Uri STATE_URI = Uri.parse("content://" + AUTHORITY + "/state");
     public static final Uri MEDIA_META_URI = Uri.parse("content://" + AUTHORITY + "/media-meta");
-    private static final String VERSION = "v9.6.0-first-real-camera1-injection";
+    private static final String VERSION = "v9.6.1-auto-pipeline-camera2-surface-shadow";
 
     @Override public boolean onCreate() { return true; }
 

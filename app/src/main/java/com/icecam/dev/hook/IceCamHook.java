@@ -1,6 +1,9 @@
 package com.icecam.dev.hook;
 
 import android.util.Log;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
 import android.content.Context;
 import android.app.Application;
 import android.hardware.Camera;
@@ -35,7 +38,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static final String SESSION_EVENTS = CACHE_DIR + "/capture_session_events.jsonl";
     private static final String SURFACE_EVENTS = CACHE_DIR + "/surface_events.jsonl";
     private static final String SURFACE_OWNERSHIP_EVENTS = CACHE_DIR + "/surface_ownership_events.jsonl";
-    private static final String VERSION = "v9.6.0-first-real-camera1-injection";
+    private static final String VERSION = "v9.6.1-auto-pipeline-camera2-surface-shadow";
     private static final String PROVIDER_CONFIG_URI = "content://com.icecam.dev.provider/config";
     private static final String PROVIDER_STATE_URI = "content://com.icecam.dev.provider/state";
     private static final String PROVIDER_MEDIA_URI = "content://com.icecam.dev.provider/media-meta";
@@ -178,6 +181,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
                 ensureRenderer(lp, "CameraDevice.createCaptureSession");
                 logEvent(lp, "[Camera2] CameraDeviceImpl.createCaptureSession", p);
                 surfaceOwnerEvent(lp, "CameraDeviceImpl.createCaptureSession", p, null);
+                maybeTraceSessionSurfaces(lp, p, "createCaptureSession.before");
             }
             @Override protected void afterHookedMethod(MethodHookParam p) {
                 log("[Camera2] CameraDeviceImpl.createCaptureSession after package=" + lp.packageName
@@ -211,12 +215,14 @@ public class IceCamHook implements IXposedHookLoadPackage {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
                 logEvent(lp, "[Camera2] CameraCaptureSession.setRepeatingRequest", p);
                 sessionEvent(lp, "setRepeatingRequest", p);
+                logAutoPipeline(lp, "CameraCaptureSession.setRepeatingRequest", p);
             }
         });
         hookAll(cs, "capture", new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
                 logEvent(lp, "[Camera2] CameraCaptureSession.capture", p);
                 sessionEvent(lp, "capture", p);
+                logAutoPipeline(lp, "CameraCaptureSession.capture", p);
             }
         });
         hookAll(cs, "captureBurst", new XC_MethodHook() {
@@ -333,6 +339,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
             hookAll(builder, "addTarget", new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam p) {
                     surfaceOwnerEvent(lp, "CaptureRequest.Builder.addTarget", p, arg(p, 0, null));
+                    maybeStartSurfaceShadow(lp, arg(p, 0, null), "CaptureRequest.Builder.addTarget");
                 }
             });
             hookAll(builder, "removeTarget", new XC_MethodHook() {
@@ -343,6 +350,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
             hookAll(builder, "build", new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam p) {
                     surfaceOwnerEvent(lp, "CaptureRequest.Builder.build.before", p, null);
+                    logAutoPipeline(lp, "CaptureRequest.Builder.build.before", p);
                 }
                 @Override protected void afterHookedMethod(MethodHookParam p) {
                     surfaceOwnerEvent(lp, "CaptureRequest.Builder.build.after", p, p.getResult());
@@ -489,6 +497,94 @@ public class IceCamHook implements IXposedHookLoadPackage {
         return true;
     }
 
+
+    private static boolean surfaceShadowEnabled() {
+        if (!active()) return false;
+        String m = mode();
+        return "auto-pipeline".equals(m) || "camera2-surface-shadow".equals(m) || "experimental-frame-injection".equals(m);
+    }
+
+    private static void logAutoPipeline(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p) {
+        if (!surfaceShadowEnabled()) return;
+        String json = "{\"version\":\"" + VERSION + "\",\"package\":\"" + esc(lp.packageName)
+                + "\",\"process\":\"" + esc(lp.processName) + "\",\"action\":\"" + esc(action)
+                + "\",\"mode\":\"" + esc(mode()) + "\",\"mediaReady\":" + mediaReady()
+                + ",\"args\":\"" + esc(argsToString(p == null ? null : p.args)) + "\"}";
+        try { Log.i(TAG, "AutoPipelineJson " + json); } catch (Throwable ignored) {}
+        xlog("IceCam/Hook AutoPipelineJson " + json);
+    }
+
+    private static void maybeTraceSessionSurfaces(XC_LoadPackage.LoadPackageParam lp, XC_MethodHook.MethodHookParam p, String action) {
+        if (!surfaceShadowEnabled()) return;
+        try {
+            StringBuilder sb = new StringBuilder();
+            Object[] args = p == null ? null : p.args;
+            if (args != null) {
+                for (int i = 0; i < args.length; i++) {
+                    Object a = args[i];
+                    if (a instanceof java.util.List) sb.append("arg").append(i).append("=").append(surfaceCollectionDetails((java.util.Collection)a)).append(' ');
+                    else sb.append("arg").append(i).append('=').append(objectDetail(a)).append(' ');
+                }
+            }
+            String json = "{\"version\":\"" + VERSION + "\",\"package\":\"" + esc(lp.packageName)
+                    + "\",\"process\":\"" + esc(lp.processName) + "\",\"action\":\"" + esc(action)
+                    + "\",\"mode\":\"" + esc(mode()) + "\",\"surfaces\":\"" + esc(sb.toString()) + "\"}";
+            Log.i(TAG, "Camera2SurfaceShadowJson " + json);
+            xlog("IceCam/Hook Camera2SurfaceShadowJson " + json);
+        } catch (Throwable t) {
+            log("[ERR] maybeTraceSessionSurfaces " + shortErr(t));
+        }
+    }
+
+    private static final java.util.Set<Integer> PAINTED_SURFACES = java.util.Collections.synchronizedSet(new java.util.HashSet<Integer>());
+    private static void maybeStartSurfaceShadow(final XC_LoadPackage.LoadPackageParam lp, Object surfaceObj, final String source) {
+        if (!surfaceShadowEnabled()) return;
+        if (!(surfaceObj instanceof Surface)) return;
+        final Surface s = (Surface) surfaceObj;
+        final int id = System.identityHashCode(s);
+        if (!PAINTED_SURFACES.add(id)) return;
+        String json = "{\"version\":\"" + VERSION + "\",\"package\":\"" + esc(lp.packageName)
+                + "\",\"process\":\"" + esc(lp.processName) + "\",\"action\":\"candidate\",\"source\":\"" + esc(source)
+                + "\",\"surface\":\"" + esc(objectDetail(s)) + "\",\"mode\":\"" + esc(mode()) + "\"}";
+        try { Log.i(TAG, "Camera2SurfaceShadowJson " + json); } catch (Throwable ignored) {}
+        xlog("IceCam/Hook Camera2SurfaceShadowJson " + json);
+        // v9.6.1 intentionally performs a conservative paint probe only. On many Camera2 preview
+        // surfaces lockCanvas() is rejected because the camera HAL already owns the producer side.
+        // We attempt a single non-fatal draw to classify whether this surface can be painted by app process.
+        tryPaintSurfaceOnce(lp, s, source, id);
+    }
+
+    private static void tryPaintSurfaceOnce(XC_LoadPackage.LoadPackageParam lp, Surface s, String source, int id) {
+        Canvas c = null;
+        String result = "unknown";
+        try {
+            c = s.lockCanvas(null);
+            if (c == null) result = "lock-null";
+            else {
+                Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+                c.drawColor(Color.rgb(8, 12, 24));
+                p.setColor(Color.rgb(30, 144, 255));
+                p.setStrokeWidth(8f);
+                c.drawRect(20, 20, Math.max(60, c.getWidth()-20), Math.max(60, c.getHeight()-20), p);
+                p.setTextSize(Math.max(28f, c.getWidth() / 24f));
+                p.setColor(Color.WHITE);
+                c.drawText("IceCam v9.6.1", 48, Math.min(c.getHeight()-60, 110), p);
+                p.setTextSize(Math.max(20f, c.getWidth() / 40f));
+                c.drawText("Camera2 surface paint probe", 48, Math.min(c.getHeight()-30, 160), p);
+                result = "paint-ok:" + c.getWidth() + "x" + c.getHeight();
+            }
+        } catch (Throwable t) {
+            result = shortErr(t);
+        } finally {
+            try { if (c != null) s.unlockCanvasAndPost(c); } catch (Throwable t) { result = result + ":unlock=" + shortErr(t); }
+        }
+        String json = "{\"version\":\"" + VERSION + "\",\"package\":\"" + esc(lp.packageName)
+                + "\",\"process\":\"" + esc(lp.processName) + "\",\"action\":\"paint-probe\",\"source\":\"" + esc(source)
+                + "\",\"surfaceId\":" + id + ",\"result\":\"" + esc(result) + "\",\"mode\":\"" + esc(mode()) + "\"}";
+        try { Log.i(TAG, "Camera2SurfaceShadowJson " + json); } catch (Throwable ignored) {}
+        xlog("IceCam/Hook Camera2SurfaceShadowJson " + json);
+    }
+
     private void hookCamera1(final XC_LoadPackage.LoadPackageParam lp) {
         final Class<?> cam = findClassBoot("android.hardware.Camera");
         if (cam == null) return;
@@ -613,7 +709,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static boolean injectionEnabled() {
         if (!active()) return false;
         String m = mode();
-        return "camera1-nv21-test".equals(m) || "experimental-frame-injection".equals(m);
+        return "camera1-nv21-test".equals(m) || "experimental-frame-injection".equals(m) || "auto-pipeline".equals(m);
     }
 
     private static void accessProbe(XC_LoadPackage.LoadPackageParam lp) {

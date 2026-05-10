@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam v9.6.0 First Real Camera1 Injection
-version=v9.6.0-first-real-camera1-injection
+name=IceCam v9.6.1 Auto Pipeline Surface Shadow
+version=v9.6.1-auto-pipeline-camera2-surface-shadow
 versionCode=960
 author=IceCam
-summary=IceCam root control layer, LSPosed camera telemetry, provider bridge, Camera1 NV21 experimental injection, safe storage bootstrap, and debug bundles for Android 12-15
+summary=IceCam root control layer, LSPosed camera telemetry, provider bridge, auto-pipeline, Camera1 fallback, Camera2 surface shadow probe, safe storage bootstrap, and debug bundles for Android 12-15

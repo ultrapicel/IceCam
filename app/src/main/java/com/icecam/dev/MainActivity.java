@@ -21,7 +21,7 @@ import com.icecam.dev.renderer.RendererSandbox;
 public class MainActivity extends Activity {
     private static final int REQ_PHOTO = 701;
     private static final int REQ_VIDEO = 702;
-    private static final String APP_VERSION = "v9.6.0-first-real-camera1-injection";
+    private static final String APP_VERSION = "v9.6.1-auto-pipeline-camera2-surface-shadow";
     private final String ctl = "/data/adb/icecam/bin/icecamctl";
     private final String ice = "/data/adb/icecam";
     private String tab = "Dashboard", mode = "log-only", cameraMode = "auto", compatibilityMode = "strict-real", mediaType = "none";
@@ -157,7 +157,7 @@ public class MainActivity extends Activity {
     private void renderUi() {
         root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackground(appBg());
         status = tv("IceCam " + APP_VERSION, 20, 1); status.setPadding(dp(14),dp(12),dp(14),dp(6)); root.addView(status);
-        TextView hint = muted("Development build · v9.6.0 first real Camera1 injection · experimental"); hint.setPadding(dp(14),0,dp(14),dp(6)); root.addView(hint);
+        TextView hint = muted("Development build · v9.6.1 auto-pipeline · Camera2 Surface shadow experiment"); hint.setPadding(dp(14),0,dp(14),dp(6)); root.addView(hint);
 
         HorizontalScrollView hsv = new HorizontalScrollView(this); hsv.setHorizontalScrollBarEnabled(false); tabBar = new LinearLayout(this); tabBar.setOrientation(LinearLayout.HORIZONTAL); tabBar.setPadding(dp(8),dp(4),dp(8),dp(6)); hsv.addView(tabBar); root.addView(hsv);
         for (String t: new String[]{"Dashboard","Root","Media","Hooks","Logs","Diagnostics"}) { final String ft=t; TextView b=chip(t, tab.equals(t)); b.setOnClickListener(v->{tab=ft; saveSettings(); renderUi();}); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(t.equals("Diagnostics")?112:92),dp(44)); lp.setMargins(dp(3),0,dp(3),0); tabBar.addView(b, lp); }
@@ -169,23 +169,23 @@ public class MainActivity extends Activity {
     }
 
     private void dashboard(){
-        LinearLayout s=card(); section(s,"Status", "Current local UI state. Root state is checked by Step 1.");
+        LinearLayout s=card(); section(s,"Status", "Current local UI state. Main flow is automatic: no manual hook-mode switching is required.");
         pillRow(s,"Next diagnostic step", String.valueOf(diagStep));
         pillRow(s,"Replacement", replacementActive?"ACTIVE":"STOPPED"); pillRow(s,"Hook mode",mode); pillRow(s,"Camera target",cameraMode); pillRow(s,"Media",mediaType); pillRow(s,"Selected",mediaUri==null?"none":"yes");
 
-        LinearLayout w=card(); section(w,"Diagnostic flow", "Press in order. Step 4 clears stale logcat, then Step 5 must open target camera apps before export.");
+        LinearLayout w=card(); section(w,"Auto diagnostic flow 1–6", "Press in order. Step 4 automatically selects the safest experimental pipeline. Step 5 marks the camera test window; then open Camera / Telegram / Chrome for 5–10 seconds.");
         addBtn(w,"1 · Root Check", diagStep==1, v->{diagStep=2; saveSettings(); requestRootCheck(); renderUi();});
         addBtn(w,"2 · Prepare Hook Layer", diagStep==2, v->{diagStep=3; saveSettings(); prepareHooks(); renderUi();});
         addBtn(w,"3A · Select Photo", diagStep==3, v->selectPhoto());
         addBtn(w,"3B · Select Video", diagStep==3, v->selectVideo());
-        addBtn(w,"4 · Start Replacement", diagStep==4, v->{diagStep=5; saveSettings(); startReplacement(); renderUi();});
-        addBtn(w,"5 · Open target camera manually", diagStep==5, v->{diagStep=6; saveSettings(); show("Open Camera / Telegram / Chrome camera screen now. Keep each camera open for 5–10 seconds. Then return and press Step 6 Export Lite Debug Bundle."); renderUi();});
+        addBtn(w,"4 · Start IceCam Auto Pipeline", diagStep==4, v->{diagStep=5; saveSettings(); startReplacement(); renderUi();});
+        addBtn(w,"5 · Auto Test Camera Pipeline", diagStep==5, v->{diagStep=6; saveSettings(); markAutoPipelineTest(); renderUi();});
         addBtn(w,"6 · Export Lite Debug Bundle", diagStep==6, v->{diagStep=1; saveSettings(); exportDebugBundle(); renderUi();});
         addBtn(w,"Stop Replacement", false, v->stopReplacement());
 
         LinearLayout n=card(); section(n,"Expected v7 hook markers", null);
         n.addView(muted("Required markers: [LOAD] → [HOOKED] → getCameraIdList → getCameraCharacteristics → openCamera"));
-        n.addView(muted("v9.6.0 required markers: provider bridge OK, Camera1 callback wrap, Camera1InjectionJson count, renderer active, no crash"));
+        n.addView(muted("v9.6.1 markers: AutoPipelineJson, Camera2SurfaceShadowJson, provider bridge OK, renderer active, no crash"));
     }
     private void rootTab(){
         LinearLayout c=card(); section(c,"Root / module paths", "Root is requested once on app start in dev builds. Manual tools stay here."); c.addView(muted("control path: "+ctl)); c.addView(muted("module path: "+ice));
@@ -198,7 +198,7 @@ public class MainActivity extends Activity {
     private void mediaTab(){
         LinearLayout info=card(); section(info,"Media preview", "Select media only through Dashboard step 3 during diagnostics.");
         info.addView(muted("Selected media URI: "+String.valueOf(mediaUri))); info.addView(muted("Working copy path: /data/adb/icecam/media/source"));
-        LinearLayout b=card(); section(b,"Preview controls", "Affects preview/config. v9.6.0 can inject a generated NV21 test pattern in Camera1 experimental mode.");
+        LinearLayout b=card(); section(b,"Preview controls", "Affects preview/config. Auto-pipeline writes these values to the provider; manual mode selection is not required.");
         addBtn(b,"Loop "+(loop?"ON":"OFF"),false,v->{loop=!loop; saveSettings(); writeAppConfigViaRoot(); renderUi();}); addBtn(b,"Mirror",false,v->{mirror=!mirror; applyPreviewTransform(); saveSettings(); writeAppConfigViaRoot();});
         addBtn(b,"Zoom +",false,v->{zoom+=0.1f; applyPreviewTransform(); saveSettings(); writeAppConfigViaRoot();}); addBtn(b,"Zoom -",false,v->{zoom=Math.max(0.1f,zoom-0.1f); applyPreviewTransform(); saveSettings(); writeAppConfigViaRoot();});
         addBtn(b,"Rotate",false,v->{rotation=(rotation+90)%360; applyPreviewTransform(); saveSettings(); writeAppConfigViaRoot();}); addBtn(b,"Reset Transform",false,v->{zoom=1;rotation=0;mirror=false;applyPreviewTransform();saveSettings();writeAppConfigViaRoot();});
@@ -207,9 +207,9 @@ public class MainActivity extends Activity {
         frame.addView(imagePreview, new FrameLayout.LayoutParams(-1,-1, Gravity.CENTER)); frame.addView(videoPreview, new FrameLayout.LayoutParams(-1,-1, Gravity.CENTER)); updatePreview();
     }
     private void hooksTab(){
-        LinearLayout c=card(); section(c,"Hook configuration", "v9.6.0 adds first real Camera1 NV21 preview injection. Keep log-only for safe tracing; use experimental mode only for testing."); pillRow(c,"Mode",mode); pillRow(c,"Target",cameraMode); pillRow(c,"Compatibility",compatibilityMode);
-        LinearLayout a=card(); section(a,"Mode", null); addBtn(a,"log-only", mode.equals("log-only"),v->{mode="log-only";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(a,"block-open-test", mode.equals("block-open-test"),v->{mode="block-open-test";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(a,"virtual-stub", mode.equals("virtual-stub"),v->{mode="virtual-stub";saveSettings();writeAppConfigViaRoot();renderUi();});
-        addBtn(a,"camera1-nv21-test", mode.equals("camera1-nv21-test"),v->{mode="camera1-nv21-test";saveSettings();writeAppConfigViaRoot();renderUi();});
+        LinearLayout c=card(); section(c,"Advanced hook configuration", "Main Dashboard uses auto-pipeline. Only change these values when debugging a specific failure."); pillRow(c,"Mode",mode); pillRow(c,"Target",cameraMode); pillRow(c,"Compatibility",compatibilityMode);
+        LinearLayout a=card(); section(a,"Advanced manual modes", "Dashboard Step 4 normally sets auto-pipeline automatically."); addBtn(a,"auto-pipeline", mode.equals("auto-pipeline"),v->{mode="auto-pipeline";cameraMode="auto";compatibilityMode="auto";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(a,"log-only", mode.equals("log-only"),v->{mode="log-only";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(a,"camera1-nv21-test", mode.equals("camera1-nv21-test"),v->{mode="camera1-nv21-test";saveSettings();writeAppConfigViaRoot();renderUi();});
+        addBtn(a,"camera2-surface-shadow", mode.equals("camera2-surface-shadow"),v->{mode="camera2-surface-shadow";saveSettings();writeAppConfigViaRoot();renderUi();});
         addBtn(a,"experimental-frame-injection", mode.equals("experimental-frame-injection"),v->{mode="experimental-frame-injection";saveSettings();writeAppConfigViaRoot();renderUi();});
         LinearLayout t=card(); section(t,"Target camera", null); addBtn(t,"auto", cameraMode.equals("auto"),v->{cameraMode="auto";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(t,"back", cameraMode.equals("back"),v->{cameraMode="back";saveSettings();writeAppConfigViaRoot();renderUi();}); addBtn(t,"front", cameraMode.equals("front"),v->{cameraMode="front";saveSettings();writeAppConfigViaRoot();renderUi();});
         LinearLayout m=card(); section(m,"Compatibility profile mode", "strict-real is default; compatibility/experimental are passive flags in v8.");
@@ -241,7 +241,28 @@ public class MainActivity extends Activity {
 
     private void requestRootCheck(){ runCtl("bootstrap-app"); }
     private void prepareHooks(){ startLocalRenderer("prepare-hooks"); writeAppConfigViaRoot(); runCtl("prepare-hooks"); }
-    private void startReplacement(){ if(mediaUri==null){show("Step 3 required: select photo/video first");return;} copyMediaToRoot(); replacementActive=true; saveSettings(); writeAppConfigViaRoot(); startLocalRenderer("start-replacement"); runCtl("start"); }
+    private void startReplacement(){
+        if(mediaUri==null){show("Step 3 required: select photo/video first");return;}
+        mode="auto-pipeline";
+        cameraMode="auto";
+        compatibilityMode="auto";
+        copyMediaToRoot();
+        replacementActive=true;
+        saveSettings();
+        writeAppConfigViaRoot();
+        startLocalRenderer("start-auto-pipeline");
+        android.util.Log.i("IceCam/UI", "AutoPipelineJson {\"version\":\""+APP_VERSION+"\",\"action\":\"start\",\"mode\":\""+mode+"\",\"cameraMode\":\""+cameraMode+"\",\"compatibilityMode\":\""+compatibilityMode+"\"}");
+        runCtl("start");
+    }
+    private void markAutoPipelineTest(){
+        mode="auto-pipeline";
+        cameraMode="auto";
+        compatibilityMode="auto";
+        saveSettings();
+        writeAppConfigViaRoot();
+        android.util.Log.i("IceCam/UI", "AutoPipelineJson {\"version\":\""+APP_VERSION+"\",\"action\":\"test-window\",\"instruction\":\"open-camera-targets-now\"}");
+        show("Auto pipeline is active. Open Camera / Telegram / Chrome camera screen now for 5–10 seconds each. Then return and press Step 6 Export Lite Debug Bundle.");
+    }
     private void stopReplacement(){ replacementActive=false; saveSettings(); writeAppConfigViaRoot(); try{RendererSandbox.stop("ui-stop");}catch(Throwable ignored){} runCtl("stop"); }
     private void exportDebugBundle(){ runCtl("lite-logs"); }
     private void runCtl(String arg){ runRoot(ctl+" "+arg); }
@@ -257,7 +278,7 @@ public class MainActivity extends Activity {
             "  \"mediaUri\": \""+uri+"\",\n"+
             "  \"mediaPath\": \"/data/adb/icecam/media/source\",\n"+
             "  \"mediaMetaPath\": \"/data/adb/icecam/media/source.meta.json\",\n"+
-            "  \"pipelineStage\": \"first-real-camera1-injection-experimental\",\n"+
+            "  \"pipelineStage\": \"auto-pipeline-camera2-surface-shadow\",\n"+
             "  \"loop\": "+loop+", \"mirror\": "+mirror+", \"zoom\": "+zoom+", \"rotation\": "+rotation+"\n}"; }
     private void writeAppConfigViaRoot(){ String b64=android.util.Base64.encodeToString(json().getBytes(StandardCharsets.UTF_8), android.util.Base64.NO_WRAP); runRoot("mkdir -p /data/adb/icecam/config && echo '"+b64+"' | base64 -d > /data/adb/icecam/config/app_config.json && chmod 666 /data/adb/icecam/config/app_config.json"); }
     private void copyMediaToRoot(){ try{ File tmp=new File(getCacheDir(),"icecam_source"); long bytes=0; try(InputStream in=getContentResolver().openInputStream(mediaUri); OutputStream os=new FileOutputStream(tmp)){ byte[] buf=new byte[1024*128]; int n; while((n=in.read(buf))>0){ os.write(buf,0,n); bytes+=n; }} mediaBytes=bytes; saveSettings(); String meta=mediaMetaJson(bytes); String b64=android.util.Base64.encodeToString(meta.getBytes(StandardCharsets.UTF_8), android.util.Base64.NO_WRAP); runRoot("mkdir -p /data/adb/icecam/media && cp '"+tmp.getAbsolutePath()+"' /data/adb/icecam/media/source && echo '"+b64+"' | base64 -d > /data/adb/icecam/media/source.meta.json && chmod 666 /data/adb/icecam/media/source /data/adb/icecam/media/source.meta.json && ls -l /data/adb/icecam/media/source /data/adb/icecam/media/source.meta.json"); }catch(Exception e){ show("copyMediaToRoot error: "+e); } }
