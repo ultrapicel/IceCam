@@ -48,26 +48,26 @@ jobs:
         run: |
           mkdir -p build/artifacts
           cd module
-          zip -r ../build/artifacts/IceCam-root-module-v9.3.zip .
+          zip -r ../build/artifacts/IceCam-root-module-v9.3.1.zip .
           cd ..
-          cp app/build/outputs/apk/debug/app-debug.apk build/artifacts/IceCam-app-v9.3.apk
+          cp app/build/outputs/apk/debug/app-debug.apk build/artifacts/IceCam-app-v9.3.1.apk
 
       - name: Build source snapshot
         run: |
           mkdir -p build/artifacts
-          zip -r build/artifacts/IceCam-source-snapshot-v9.3.zip \
+          zip -r build/artifacts/IceCam-source-snapshot-v9.3.1.zip \
             app module xposed_stub_src .github settings.gradle build.gradle README.md \
             -x '*/build/*' -x '*/.gradle/*' -x '*.git*'
 
       - name: Build info
         run: |
           {
-            echo "IceCam v9.3 surface ownership mapping"
+            echo "IceCam v9.3.1.1 surface ownership buildfix"
             echo "date=$(date -u '+%F %T UTC')"
             echo "commit=${GITHUB_SHA:-manual}"
-            echo "apk=IceCam-app-v9.3.apk"
-            echo "module=IceCam-root-module-v9.3.zip"
-            echo "source=IceCam-source-snapshot-v9.3.zip"
+            echo "apk=IceCam-app-v9.3.1.apk"
+            echo "module=IceCam-root-module-v9.3.1.zip"
+            echo "source=IceCam-source-snapshot-v9.3.1.zip"
           } > build/artifacts/build-info-v9.3.txt
 
       - name: Upload artifacts

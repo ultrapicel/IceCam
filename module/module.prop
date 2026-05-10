@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam v9.3 Surface Ownership Mapper
-version=9.3-surface-ownership
+name=IceCam v9.3.1 Surface Ownership Mapper
+version=9.3.1-surface-ownership-buildfix
 versionCode=93
 author=IceCam
 summary=IceCam root control layer, LSPosed telemetry, CameraCharacteristics cache, capture-session trace, and Surface ownership mapping

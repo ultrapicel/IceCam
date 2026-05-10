@@ -189,7 +189,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     }
 
     private static void sessionEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p) {
-        String json = "{\"version\":\"9.3-surface-ownership\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"9.3.1-surface-ownership-buildfix\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"active\":" + active()
                 + ",\"mode\":\"" + esc(mode()) + "\",\"mediaExists\":" + new File(MEDIA).exists()
@@ -260,7 +260,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     }
 
     private static void surfaceEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p) {
-        String json = "{\"version\":\"9.3-surface-ownership\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"9.3.1-surface-ownership-buildfix\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"thread\":\"" + esc(Thread.currentThread().getName())
                 + "\",\"active\":" + active() + ",\"mode\":\"" + esc(mode())
@@ -317,7 +317,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     }
 
     private static void surfaceOwnerEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p, Object focus) {
-        String json = "{\"version\":\"9.3-surface-ownership\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"9.3.1-surface-ownership-buildfix\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"thread\":\"" + esc(Thread.currentThread().getName())
                 + "\",\"active\":" + active() + ",\"mode\":\"" + esc(mode())
@@ -344,12 +344,24 @@ public class IceCamHook implements IXposedHookLoadPackage {
         return sb.toString();
     }
 
+
+    private static java.util.Collection getCaptureRequestTargetsReflective(Object request) {
+        try {
+            java.lang.reflect.Method m = request.getClass().getDeclaredMethod("getTargets");
+            m.setAccessible(true);
+            Object r = m.invoke(request);
+            if (r instanceof java.util.Collection) return (java.util.Collection) r;
+        } catch (Throwable t) {
+            // getTargets is not public on some Android SDK stubs; keep tracing without failing build/runtime.
+        }
+        return null;
+    }
+
     private static String requestTargetsFromObject(Object o) {
         try {
             if (o == null) return "";
             if (o instanceof CaptureRequest) {
-                java.util.Collection<Surface> targets = ((CaptureRequest)o).getTargets();
-                return surfaceCollectionDetails(targets);
+                return surfaceCollectionDetails(getCaptureRequestTargetsReflective(o));
             }
             if (o instanceof java.util.Collection) return surfaceCollectionDetails((java.util.Collection)o);
             if (o.getClass().isArray()) {
@@ -490,7 +502,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static String profileJson(XC_LoadPackage.LoadPackageParam lp, String id, CameraCharacteristics cc) {
         StringBuilder sb = new StringBuilder();
         sb.append('{');
-        field(sb, "version", "9.3-surface-ownership", true);
+        field(sb, "version", "9.3.1-surface-ownership-buildfix", true);
         field(sb, "ts", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()), false);
         field(sb, "package", lp.packageName, false);
         field(sb, "process", lp.processName, false);
