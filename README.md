@@ -1,6 +1,6 @@
-# IceCam v9.3.1 — Surface Ownership Mapping
+# IceCam v9.3.2 — Noise-Filtered Surface Ownership Mapping
 
-`v9.3.1-surface-ownership-buildfix` is still **passive telemetry only**. It does not inject frames and does not replace a camera stream yet.
+`v9.3.2-noise-filter-surface-map` is still **passive telemetry only**. It does not inject frames and does not replace a camera stream yet.
 
 This build moves from basic Surface tracing to ownership mapping:
 
@@ -14,9 +14,9 @@ This build moves from basic Surface tracing to ownership mapping:
 
 The workflow produces:
 
-- `IceCam-app-v9.3.1.apk`
-- `IceCam-root-module-v9.3.1.zip`
-- `IceCam-source-snapshot-v9.3.1.zip`
+- `IceCam-app-v9.3.2.apk`
+- `IceCam-root-module-v9.3.2.zip`
+- `IceCam-source-snapshot-v9.3.2.zip`
 - `build-info-v9.3.txt`
 
 ## Install / test matrix

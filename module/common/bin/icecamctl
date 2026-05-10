@@ -6,7 +6,7 @@ STATE="$ICE/state"
 MEDIA="$ICE/media"
 CACHE="$ICE/cache"
 BIN="$ICE/bin"
-VERSION="v9.3.1"
+VERSION="v9.3.2"
 APP_PKG="com.icecam.dev"
 TARGETS="com.android.camera com.android.chrome org.telegram.messenger org.telegram.messenger.web"
 
@@ -21,7 +21,7 @@ init_dirs() {
   chmod 666 "$STATE/active" "$STATE/prepared" 2>/dev/null
   [ -f "$CONFIG/app_config.json" ] || cat > "$CONFIG/app_config.json" <<JSON
 {
-  "version":"9.3.1-surface-ownership-buildfix",
+  "version":"9.3.2-noise-filter-surface-map",
   "active":false,
   "mode":"log-only",
   "cameraMode":"auto",
@@ -29,7 +29,7 @@ init_dirs() {
   "mediaType":"none",
   "mediaPath":"/data/adb/icecam/media/source",
   "mediaMetaPath":"/data/adb/icecam/media/source.meta.json",
-  "pipelineStage":"surface-ownership"
+  "pipelineStage":"surface-ownership-noise-filter"
 }
 JSON
   chmod 666 "$CONFIG/app_config.json" 2>/dev/null
@@ -68,7 +68,8 @@ collect_lite_debug_bundle() {
   rm -rf "$TMP"
   mkdir -p "$TMP" "$TMP/icecam/logs" "$TMP/icecam/config" "$TMP/icecam/state" "$TMP/icecam/cache" "$TMP/media" "$TMP/logcat" "$TMP/system" "$TMP/camera" "$TMP/packages"
 
-  FILTER_RE='IceCam|IceCam/Hook|ProfileCacheJson|CaptureSessionJson|SurfaceOwnerJson|AccessProbe|LSPosed|Xposed|CameraManager|CameraDevice|CameraCaptureSession|CaptureRequest|OutputConfiguration|CameraService|CameraProvider|android.hardware.Camera|openCamera|getCameraIdList|getCameraCharacteristics|createCaptureSession|createCaptureRequest|setRepeatingRequest|addTarget|removeTarget|SurfaceJson|SurfaceTexture|ImageReader|android.view.Surface'
+  FILTER_RE='IceCam/Hook|ProfileCacheJson|CaptureSessionJson|SurfaceOwnerJson|AccessProbe|LSPosed|Xposed|CameraManager|CameraDevice|CameraCaptureSession|CaptureRequest|OutputConfiguration|CameraService|CameraProvider|android.hardware.Camera|openCamera|getCameraIdList|getCameraCharacteristics|createCaptureSession|createCaptureRequest|setRepeatingRequest|addTarget|removeTarget|SurfaceJson|SurfaceTexture|ImageReader'
+  TARGET_EVENT_RE='package=(com.android.camera|com.android.chrome|org.telegram.messenger|org.telegram.messenger.web)|"package":"(com.android.camera|com.android.chrome|org.telegram.messenger|org.telegram.messenger.web)"'
 
   echo "IceCam lite debug bundle $VERSION" > "$TMP/summary.txt"
   echo "created=$(date '+%F %T')" >> "$TMP/summary.txt"
@@ -101,10 +102,11 @@ collect_lite_debug_bundle() {
   [ -e "$MEDIA/source" ] && { wc -c "$MEDIA/source"; md5sum "$MEDIA/source" 2>/dev/null; sha256sum "$MEDIA/source" 2>/dev/null; } > "$TMP/media/source_hashes.txt" 2>&1
   [ -e "$MEDIA/source.meta.json" ] && cp "$MEDIA/source.meta.json" "$TMP/media/source.meta.json" 2>/dev/null
 
-  logcat -d -v threadtime | grep -E "$FILTER_RE" | tail -n 2500 > "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>&1
-  grep -E 'IceCam|IceCam/Hook|ProfileCacheJson|CaptureSessionJson|SurfaceOwnerJson|AccessProbe' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" > "$TMP/logcat/icecam_only.txt" 2>/dev/null
-  grep -E 'LSPosed|Xposed' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" > "$TMP/logcat/lsposed_only.txt" 2>/dev/null
-  grep -E 'CameraManager|CameraDevice|CameraCaptureSession|CaptureRequest|OutputConfiguration|CameraService|CameraProvider|android.hardware.Camera|openCamera|getCameraIdList|getCameraCharacteristics|createCaptureSession|createCaptureRequest|setRepeatingRequest|addTarget|removeTarget|SurfaceOwnerJson|SurfaceJson|SurfaceTexture|ImageReader|android.view.Surface' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" > "$TMP/logcat/camera_only.txt" 2>/dev/null
+  logcat -d -v threadtime | grep -E "$FILTER_RE" | grep -v '"package":"com.icecam.dev"' | grep -v 'package=com.icecam.dev' | grep -v 'Surface.isValid' | tail -n 6000 > "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>&1
+  grep -E 'IceCam/Hook|ProfileCacheJson|CaptureSessionJson|SurfaceOwnerJson|AccessProbe' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" > "$TMP/logcat/icecam_only.txt" 2>/dev/null
+  grep -E "$TARGET_EVENT_RE" "$TMP/logcat/icecam_only.txt" > "$TMP/logcat/target_icecam_events.txt" 2>/dev/null
+  grep -E 'LSPosed|Xposed' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" | grep -E 'IceCam|com.android.camera|com.android.chrome|org.telegram' | tail -n 1000 > "$TMP/logcat/lsposed_only.txt" 2>/dev/null
+  grep -E 'CameraManager|CameraDevice|CameraCaptureSession|CaptureRequest|OutputConfiguration|CameraService|CameraProvider|android.hardware.Camera|openCamera|getCameraIdList|getCameraCharacteristics|createCaptureSession|createCaptureRequest|setRepeatingRequest|addTarget|removeTarget|SurfaceOwnerJson|SurfaceJson|SurfaceTexture|ImageReader' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" > "$TMP/logcat/camera_only.txt" 2>/dev/null
   grep 'ProfileCacheJson' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" | sed 's/^.*ProfileCacheJson //' > "$TMP/icecam/cache/camera_profiles_from_logcat.jsonl" 2>/dev/null
   grep 'CaptureSessionJson' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" | sed 's/^.*CaptureSessionJson //' > "$TMP/icecam/cache/capture_session_events_from_logcat.jsonl" 2>/dev/null
   grep 'SurfaceJson' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" | sed 's/^.*SurfaceJson //' > "$TMP/icecam/cache/surface_events_from_logcat.jsonl" 2>/dev/null
@@ -138,10 +140,12 @@ collect_lite_debug_bundle() {
   echo "" >> "$TMP/summary.txt"
   echo "Key counters:" >> "$TMP/summary.txt"
   echo "load_count=$(grep -c '\[LOAD\]' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>/dev/null)" >> "$TMP/summary.txt"
-  echo "openCamera_count=$(grep -c 'openCamera' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>/dev/null)" >> "$TMP/summary.txt"
-  echo "getCameraIdList_count=$(grep -c 'getCameraIdList' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>/dev/null)" >> "$TMP/summary.txt"
-  echo "getCameraCharacteristics_count=$(grep -c 'getCameraCharacteristics' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>/dev/null)" >> "$TMP/summary.txt"
-  echo "captureSession_count=$(grep -c 'CaptureSessionJson\|createCaptureSession' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "target_event_count=$(wc -l < "$TMP/logcat/target_icecam_events.txt" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "target_load_count=$(grep -c '\[LOAD\]' "$TMP/logcat/target_icecam_events.txt" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "openCamera_count=$(grep -c 'openCamera' "$TMP/logcat/target_icecam_events.txt" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "getCameraIdList_count=$(grep -c 'getCameraIdList' "$TMP/logcat/target_icecam_events.txt" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "getCameraCharacteristics_count=$(grep -c 'getCameraCharacteristics' "$TMP/logcat/target_icecam_events.txt" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "captureSession_count=$(grep -c 'CaptureSessionJson\|createCaptureSession' "$TMP/logcat/target_icecam_events.txt" 2>/dev/null)" >> "$TMP/summary.txt"
   echo "profile_json_count=$(wc -l < "$TMP/icecam/cache/camera_profiles_from_logcat.jsonl" 2>/dev/null)" >> "$TMP/summary.txt"
   echo "surface_json_count=$(wc -l < "$TMP/icecam/cache/surface_events_from_logcat.jsonl" 2>/dev/null)" >> "$TMP/summary.txt"
   echo "surface_ownership_count=$(wc -l < "$TMP/icecam/cache/surface_ownership_from_logcat.jsonl" 2>/dev/null)" >> "$TMP/summary.txt"
@@ -220,6 +224,7 @@ case "$1" in
     chmod 666 "$STATE/active" 2>/dev/null
     chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
     chmod 666 "$LOGS/hook.log" "$CONFIG/app_config.json" "$CACHE/camera_profiles.json" "$CACHE/camera_profiles.jsonl" "$CACHE/hook_access_probe.log" "$CACHE/capture_session_events.jsonl" "$CACHE/surface_events.jsonl" "$CACHE/surface_ownership_events.jsonl" 2>/dev/null
+    logcat -c 2>/dev/null
     echo "$(date '+%F %T') replacement start requested" >> "$LOGS/hook.log"
     echo "replacement active"
     ;;

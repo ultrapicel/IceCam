@@ -32,6 +32,10 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     @Override
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lp) throws Throwable {
+        if (isSelfPackage(lp)) {
+            try { Log.i(TAG, "[SKIP_SELF] package=" + lp.packageName + " process=" + lp.processName); } catch (Throwable ignored) {}
+            return;
+        }
         log("[LOAD] package=" + lp.packageName
                 + " process=" + lp.processName
                 + " thread=" + Thread.currentThread().getName()
@@ -189,7 +193,8 @@ public class IceCamHook implements IXposedHookLoadPackage {
     }
 
     private static void sessionEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p) {
-        String json = "{\"version\":\"9.3.1-surface-ownership-buildfix\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        if (!shouldTrace(lp, action)) return;
+        String json = "{\"version\":\"9.3.2-noise-filter-surface-map\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"active\":" + active()
                 + ",\"mode\":\"" + esc(mode()) + "\",\"mediaExists\":" + new File(MEDIA).exists()
@@ -208,11 +213,6 @@ public class IceCamHook implements IXposedHookLoadPackage {
             hookAll(surface, "release", new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam p) {
                     surfaceEvent(lp, "Surface.release", p);
-                }
-            });
-            hookAll(surface, "isValid", new XC_MethodHook() {
-                @Override protected void afterHookedMethod(MethodHookParam p) {
-                    surfaceEvent(lp, "Surface.isValid", p);
                 }
             });
         }
@@ -260,7 +260,8 @@ public class IceCamHook implements IXposedHookLoadPackage {
     }
 
     private static void surfaceEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p) {
-        String json = "{\"version\":\"9.3.1-surface-ownership-buildfix\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        if (!shouldTrace(lp, action)) return;
+        String json = "{\"version\":\"9.3.2-noise-filter-surface-map\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"thread\":\"" + esc(Thread.currentThread().getName())
                 + "\",\"active\":" + active() + ",\"mode\":\"" + esc(mode())
@@ -317,7 +318,8 @@ public class IceCamHook implements IXposedHookLoadPackage {
     }
 
     private static void surfaceOwnerEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p, Object focus) {
-        String json = "{\"version\":\"9.3.1-surface-ownership-buildfix\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        if (!shouldTrace(lp, action)) return;
+        String json = "{\"version\":\"9.3.2-noise-filter-surface-map\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"thread\":\"" + esc(Thread.currentThread().getName())
                 + "\",\"active\":" + active() + ",\"mode\":\"" + esc(mode())
@@ -422,6 +424,18 @@ public class IceCamHook implements IXposedHookLoadPackage {
         try { return String.valueOf(o); } catch (Throwable t) { return shortErr(t); }
     }
 
+
+    private static boolean isSelfPackage(XC_LoadPackage.LoadPackageParam lp) {
+        return lp != null && ("com.icecam.dev".equals(lp.packageName) || "com.icecam.dev".equals(lp.processName));
+    }
+
+    private static boolean shouldTrace(XC_LoadPackage.LoadPackageParam lp, String action) {
+        if (isSelfPackage(lp)) return false;
+        if (action == null) return true;
+        if ("Surface.isValid".equals(action)) return false;
+        return true;
+    }
+
     private void hookCamera1(final XC_LoadPackage.LoadPackageParam lp) {
         final Class<?> cam = findClassBoot("android.hardware.Camera");
         if (cam == null) return;
@@ -439,6 +453,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     }
 
     private static void accessProbe(XC_LoadPackage.LoadPackageParam lp) {
+        if (isSelfPackage(lp)) return;
         StringBuilder sb = new StringBuilder();
         sb.append("[AccessProbe] package=").append(lp.packageName)
           .append(" process=").append(lp.processName)
@@ -502,7 +517,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static String profileJson(XC_LoadPackage.LoadPackageParam lp, String id, CameraCharacteristics cc) {
         StringBuilder sb = new StringBuilder();
         sb.append('{');
-        field(sb, "version", "9.3.1-surface-ownership-buildfix", true);
+        field(sb, "version", "9.3.2-noise-filter-surface-map", true);
         field(sb, "ts", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()), false);
         field(sb, "package", lp.packageName, false);
         field(sb, "process", lp.processName, false);
