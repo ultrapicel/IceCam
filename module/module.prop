@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam v9.5.0 System Camera Probe
-version=v9.5.0-system-camera-probe
-versionCode=945
+name=IceCam v9.5.1 Low Level Deep Probe
+version=v9.5.1-low-level-deep-probe
+versionCode=951
 author=IceCam
 summary=IceCam root control layer, LSPosed camera telemetry, provider bridge, passive renderer sandbox, safe storage bootstrap, and debug bundles for Android 12-15
