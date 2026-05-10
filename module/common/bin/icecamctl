@@ -6,7 +6,7 @@ STATE="$ICE/state"
 MEDIA="$ICE/media"
 CACHE="$ICE/cache"
 BIN="$ICE/bin"
-VERSION="v9.4.5"
+VERSION="v9.4.6"
 APP_PKG="com.icecam.dev"
 TARGETS="com.android.camera com.android.chrome org.telegram.messenger org.telegram.messenger.web"
 
@@ -64,7 +64,7 @@ init_dirs() {
   chmod 666 "$STATE/active" "$STATE/prepared" 2>/dev/null
   [ -f "$CONFIG/app_config.json" ] || cat > "$CONFIG/app_config.json" <<JSON
 {
-  "version":"v9.4.5-provider-bridge",
+  "version":"v9.4.6-provider-cache-cleanup",
   "active":false,
   "mode":"log-only",
   "cameraMode":"auto",
@@ -72,7 +72,7 @@ init_dirs() {
   "mediaType":"none",
   "mediaPath":"/data/adb/icecam/media/source",
   "mediaMetaPath":"/data/adb/icecam/media/source.meta.json",
-  "pipelineStage":"provider-bridge-renderer-sandbox-passive"
+  "pipelineStage":"provider-cache-renderer-sandbox-passive"
 }
 JSON
   chmod 666 "$CONFIG/app_config.json" 2>/dev/null
@@ -158,6 +158,7 @@ collect_lite_debug_bundle() {
   grep 'RendererSandboxJson' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" | sed 's/^.*RendererSandboxJson //' > "$TMP/icecam/cache/renderer_events_from_logcat.jsonl" 2>/dev/null
   grep -E 'AccessProbe|ProviderProbe' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" > "$TMP/icecam/cache/hook_access_probe_from_logcat.txt" 2>/dev/null
   grep 'ProviderBridgeJson' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" > "$TMP/provider/provider_bridge_from_logcat.txt" 2>/dev/null
+  grep -o 'providerStats=[^ ]*' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" | tail -n 200 > "$TMP/provider/provider_cache_stats_from_logcat.txt" 2>/dev/null
   content query --uri content://com.icecam.dev.provider/config > "$TMP/provider/config_query.txt" 2>&1
   content query --uri content://com.icecam.dev.provider/state > "$TMP/provider/state_query.txt" 2>&1
   content query --uri content://com.icecam.dev.provider/media-meta > "$TMP/provider/media_meta_query.txt" 2>&1
@@ -206,6 +207,9 @@ collect_lite_debug_bundle() {
   echo "renderer_logcat_count=$(wc -l < "$TMP/icecam/cache/renderer_events_from_logcat.jsonl" 2>/dev/null)" >> "$TMP/summary.txt"
   echo "provider_probe_count=$(grep -c 'ProviderProbe' "$TMP/icecam/cache/hook_access_probe_from_logcat.txt" 2>/dev/null)" >> "$TMP/summary.txt"
   echo "provider_bridge_logcat_count=$(wc -l < "$TMP/provider/provider_bridge_from_logcat.txt" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "last_provider_stats=$(grep -o 'providerStats=[^ ]*' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>/dev/null | tail -n 1)" >> "$TMP/summary.txt"
+  echo "provider_cache_stat_lines=$(grep -c 'providerStats=' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "direct_data_adb_disabled_lines=$(grep -c 'directDataAdbIo=disabled' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>/dev/null)" >> "$TMP/summary.txt"
   echo "avc_denial_count=$(wc -l < "$TMP/selinux/avc_denials_icecam.txt" 2>/dev/null)" >> "$TMP/summary.txt"
   echo "capture_request_target_count=$(grep -c 'CaptureRequest.Builder.addTarget\|requestTargets' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>/dev/null)" >> "$TMP/summary.txt"
 
@@ -332,7 +336,7 @@ case "$1" in
     echo 0 > "$STATE/prepared"
     cat > "$CONFIG/app_config.json" <<JSON
 {
-  "version":"v9.4.5-provider-bridge",
+  "version":"v9.4.6-provider-cache-cleanup",
   "active":false,
   "mode":"log-only",
   "cameraMode":"auto",
@@ -340,7 +344,7 @@ case "$1" in
   "mediaType":"none",
   "mediaPath":"/data/adb/icecam/media/source",
   "mediaMetaPath":"/data/adb/icecam/media/source.meta.json",
-  "pipelineStage":"provider-bridge-renderer-sandbox-passive"
+  "pipelineStage":"provider-cache-renderer-sandbox-passive"
 }
 JSON
     chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null

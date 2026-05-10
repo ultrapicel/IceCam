@@ -8,8 +8,8 @@ android {
         applicationId 'com.icecam.dev'
         minSdk 31
         targetSdk 35
-        versionCode 945
-        versionName '9.4.5-provider-bridge'
+        versionCode 946
+        versionName '9.4.6-provider-cache-cleanup'
     }
 }
 

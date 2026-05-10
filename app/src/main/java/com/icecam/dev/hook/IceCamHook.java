@@ -33,7 +33,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static final String SESSION_EVENTS = CACHE_DIR + "/capture_session_events.jsonl";
     private static final String SURFACE_EVENTS = CACHE_DIR + "/surface_events.jsonl";
     private static final String SURFACE_OWNERSHIP_EVENTS = CACHE_DIR + "/surface_ownership_events.jsonl";
-    private static final String VERSION = "v9.4.5-provider-bridge";
+    private static final String VERSION = "v9.4.6-provider-cache-cleanup";
     private static final String PROVIDER_CONFIG_URI = "content://com.icecam.dev.provider/config";
     private static final String PROVIDER_STATE_URI = "content://com.icecam.dev.provider/state";
     private static final String PROVIDER_MEDIA_URI = "content://com.icecam.dev.provider/media-meta";
@@ -52,8 +52,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
                 + " active=" + active()
                 + " mode=" + mode()
                 + " provider=" + trim(providerConfig(), 256)
-                + " mediaPath=" + MEDIA
-                + " mediaExists=" + directMediaExists());
+                + " mediaReady=" + mediaReady());
 
         accessProbe(lp);
 
@@ -70,7 +69,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
         // On Android 13+ target app contexts can hit SELinux EACCES on /data/adb,
         // which made v9.4 report active=false and never start the sandbox.
         try {
-            RendererSandbox.ensureStarted(lp.packageName, lp.processName);
+            RendererSandbox.ensureStarted(lp.packageName, lp.processName, providerConfig());
             log("[RendererSandbox] ensure reason=" + reason + " " + RendererSandbox.snapshot());
         } catch (Throwable t) {
             log("[ERR] RendererSandbox ensure " + reason + " " + stack(t));
@@ -227,10 +226,10 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     private static void sessionEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p) {
         if (!shouldTrace(lp, action)) return;
-        String json = "{\"version\":\"v9.4.5-provider-bridge\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"" + VERSION + "\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"active\":" + active()
-                + ",\"mode\":\"" + esc(mode()) + "\",\"mediaExists\":" + directMediaExists()
+                + ",\"mode\":\"" + esc(mode()) + "\",\"mediaReady\":" + mediaReady()
                 + ",\"args\":\"" + esc(argsSummary(p)) + "\""
                 + ",\"requestTargets\":\"" + esc(requestTargetsFromArgs(p)) + "\"}";
         try { Log.i(TAG, "CaptureSessionJson " + json); } catch (Throwable ignored) {}
@@ -294,7 +293,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     private static void surfaceEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p) {
         if (!shouldTrace(lp, action)) return;
-        String json = "{\"version\":\"v9.4.5-provider-bridge\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"" + VERSION + "\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"thread\":\"" + esc(Thread.currentThread().getName())
                 + "\",\"active\":" + active() + ",\"mode\":\"" + esc(mode())
@@ -352,7 +351,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     private static void surfaceOwnerEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p, Object focus) {
         if (!shouldTrace(lp, action)) return;
-        String json = "{\"version\":\"v9.4.5-provider-bridge\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"" + VERSION + "\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"thread\":\"" + esc(Thread.currentThread().getName())
                 + "\",\"active\":" + active() + ",\"mode\":\"" + esc(mode())
@@ -496,7 +495,9 @@ public class IceCamHook implements IXposedHookLoadPackage {
           .append(" process=").append(lp.processName)
           .append(" providerConfig=").append(trim(config, 512))
           .append(" providerState=").append(trim(state, 256))
-          .append(" providerMedia=").append(trim(media, 256));
+          .append(" providerMedia=").append(trim(media, 256))
+          .append(" providerStats=").append(providerStats())
+          .append(" mediaReady=").append(mediaReady());
         if (DIRECT_DATA_ADB_IO) {
             sb.append(" activeRead=").append(probeRead(ACTIVE))
               .append(" configRead=").append(probeRead(CONFIG))
@@ -654,20 +655,14 @@ public class IceCamHook implements IXposedHookLoadPackage {
     }
 
     private static void writeFile(String path, String data) {
-        if (!DIRECT_DATA_ADB_IO) {
-            try { Log.i(TAG, "direct write disabled path=" + path + " bytes=" + (data == null ? 0 : data.length())); } catch (Throwable ignored) {}
-            return;
-        }
+        if (!DIRECT_DATA_ADB_IO) return;
         try {
             File f = new File(path); File d = f.getParentFile(); if (d != null && !d.exists()) d.mkdirs();
             FileOutputStream out = new FileOutputStream(f, false); out.write(data.getBytes("UTF-8")); out.close();
         } catch (Throwable t) { log("[WARN] writeFile " + path + " " + shortErr(t)); }
     }
     private static void appendFile(String path, String data) {
-        if (!DIRECT_DATA_ADB_IO) {
-            try { Log.i(TAG, "direct append disabled path=" + path + " bytes=" + (data == null ? 0 : data.length())); } catch (Throwable ignored) {}
-            return;
-        }
+        if (!DIRECT_DATA_ADB_IO) return;
         try {
             File f = new File(path); File d = f.getParentFile(); if (d != null && !d.exists()) d.mkdirs();
             FileOutputStream out = new FileOutputStream(f, true); out.write(data.getBytes("UTF-8")); out.close();
@@ -728,9 +723,9 @@ public class IceCamHook implements IXposedHookLoadPackage {
                 + " this=" + className(p == null ? null : p.thisObject)
                 + " active=" + active()
                 + " mode=" + mode()
-                + " mediaPath=" + MEDIA
-                + " mediaExists=" + directMediaExists()
-                + " provider=" + trim(providerConfig(), 512));
+                + " mediaReady=" + mediaReady()
+                + " provider=" + trim(providerConfig(), 512)
+                + " providerStats=" + providerStats());
     }
 
     private static Object arg(XC_MethodHook.MethodHookParam p, int index, Object fallback) {
@@ -756,16 +751,69 @@ public class IceCamHook implements IXposedHookLoadPackage {
         return "unknown";
     }
 
+    private static boolean mediaReady() {
+        String m = providerMediaMeta();
+        String c = providerConfig();
+        String mv = jsonRaw(m, "mediaReady", null);
+        if ("true".equalsIgnoreCase(mv)) return true;
+        if ("false".equalsIgnoreCase(mv)) return false;
+        String cv = jsonRaw(c, "mediaReady", null);
+        if ("true".equalsIgnoreCase(cv)) return true;
+        if ("false".equalsIgnoreCase(cv)) return false;
+        return false;
+    }
+
     private static boolean directMediaExists() {
         if (!DIRECT_DATA_ADB_IO) return false;
         try { return new File(MEDIA).exists(); } catch (Throwable ignored) { return false; }
     }
 
-    private static String providerConfig() { return queryProvider(PROVIDER_CONFIG_URI); }
-    private static String providerState() { return queryProvider(PROVIDER_STATE_URI); }
-    private static String providerMediaMeta() { return queryProvider(PROVIDER_MEDIA_URI); }
+    private static final long PROVIDER_CACHE_TTL_MS = 750L;
+    private static final Object PROVIDER_LOCK = new Object();
+    private static ProviderEntry providerConfigCache = new ProviderEntry(PROVIDER_CONFIG_URI);
+    private static ProviderEntry providerStateCache = new ProviderEntry(PROVIDER_STATE_URI);
+    private static ProviderEntry providerMediaCache = new ProviderEntry(PROVIDER_MEDIA_URI);
+    private static long providerOkCount;
+    private static long providerFailCount;
+    private static long providerCacheHitCount;
+    private static long providerNoContextCount;
 
-    private static String queryProvider(String uri) {
+    private static final class ProviderEntry {
+        final String uri;
+        long ts;
+        String value;
+        ProviderEntry(String uri) { this.uri = uri; }
+    }
+
+    private static String providerConfig() { return queryProviderCached(providerConfigCache); }
+    private static String providerState() { return queryProviderCached(providerStateCache); }
+    private static String providerMediaMeta() { return queryProviderCached(providerMediaCache); }
+
+    private static String providerStats() {
+        synchronized (PROVIDER_LOCK) {
+            return "ok=" + providerOkCount + ",fail=" + providerFailCount + ",cacheHit=" + providerCacheHitCount + ",noContext=" + providerNoContextCount;
+        }
+    }
+
+    private static String queryProviderCached(ProviderEntry e) {
+        long now = System.currentTimeMillis();
+        synchronized (PROVIDER_LOCK) {
+            if (e.value != null && now - e.ts < PROVIDER_CACHE_TTL_MS) {
+                providerCacheHitCount++;
+                return e.value;
+            }
+        }
+        String value = queryProviderUncached(e.uri);
+        synchronized (PROVIDER_LOCK) {
+            e.value = value;
+            e.ts = now;
+            if (value != null && value.startsWith("provider:no-context")) providerNoContextCount++;
+            if (value != null && value.startsWith("provider:")) providerFailCount++; else providerOkCount++;
+        }
+        return value;
+    }
+
+    private static String queryProviderUncached(String uri) {
         Cursor c = null;
         try {
             Context ctx = currentContext();

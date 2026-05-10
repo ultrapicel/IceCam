@@ -27,7 +27,7 @@ import java.util.Date;
 public final class RendererSandbox {
     private static final String TAG = "IceCam/RendererSandbox";
     private static final String LOG_PREFIX = "RendererSandboxJson ";
-    private static final String VERSION = "v9.4.5-provider-bridge";
+    private static final String VERSION = "v9.4.6-provider-cache-cleanup";
     private static final String CONFIG = "/data/adb/icecam/config/app_config.json";
     private static final String ACTIVE = "/data/adb/icecam/state/active";
     private static final String CACHE_DIR = "/data/adb/icecam/cache";
@@ -45,9 +45,13 @@ public final class RendererSandbox {
     private RendererSandbox() {}
 
     public static void ensureStarted(final String ownerPackage, final String ownerProcess) {
+        ensureStarted(ownerPackage, ownerProcess, "provider:local-ui");
+    }
+
+    public static void ensureStarted(final String ownerPackage, final String ownerProcess, final String providerSnapshot) {
         synchronized (LOCK) {
             if (started) {
-                event("already-started", ownerPackage, ownerProcess, null);
+                event("already-started", ownerPackage, ownerProcess, "provider=" + trim(providerSnapshot, 512));
                 return;
             }
             started = true;
@@ -56,7 +60,7 @@ public final class RendererSandbox {
             handler = new Handler(thread.getLooper());
             handler.post(new Runnable() {
                 @Override public void run() {
-                    initOnThread(ownerPackage, ownerProcess);
+                    initOnThread(ownerPackage, ownerProcess, providerSnapshot);
                 }
             });
         }
@@ -89,7 +93,7 @@ public final class RendererSandbox {
         }
     }
 
-    private static void initOnThread(String ownerPackage, String ownerProcess) {
+    private static void initOnThread(String ownerPackage, String ownerProcess, String providerSnapshot) {
         try {
             new File(CACHE_DIR).mkdirs();
             placeholder = makePlaceholder(1280, 720);
@@ -97,8 +101,8 @@ public final class RendererSandbox {
             ownedTexture.setDefaultBufferSize(1280, 720);
             ownedSurface = new Surface(ownedTexture);
             frameCounter = 0;
-            event("init", ownerPackage, ownerProcess, snapshot());
-            scheduleTick(ownerPackage, ownerProcess);
+            event("init", ownerPackage, ownerProcess, snapshot() + " provider=" + trim(providerSnapshot, 512));
+            scheduleTick(ownerPackage, ownerProcess, providerSnapshot);
         } catch (Throwable t) {
             event("init-error", ownerPackage, ownerProcess, shortErr(t));
             Log.e(TAG, "init failed", t);
@@ -114,7 +118,7 @@ public final class RendererSandbox {
         }
     }
 
-    private static void scheduleTick(final String ownerPackage, final String ownerProcess) {
+    private static void scheduleTick(final String ownerPackage, final String ownerProcess, final String providerSnapshot) {
         Handler h;
         synchronized (LOCK) { h = handler; }
         if (h == null) return;
@@ -125,9 +129,9 @@ public final class RendererSandbox {
                     frameCounter++;
                 }
                 if ((frameCounter % 60) == 1) {
-                    event("tick", ownerPackage, ownerProcess, snapshot() + " active=" + active() + " configMode=" + configValue("mode"));
+                    event("tick", ownerPackage, ownerProcess, snapshot() + " providerActive=" + jsonRaw(providerSnapshot, "active", "unknown") + " providerMode=" + jsonString(providerSnapshot, "mode", "unknown") + " providerMediaReady=" + jsonRaw(providerSnapshot, "mediaReady", "unknown"));
                 }
-                scheduleTick(ownerPackage, ownerProcess);
+                scheduleTick(ownerPackage, ownerProcess, providerSnapshot);
             }
         }, 33);
     }
@@ -142,7 +146,7 @@ public final class RendererSandbox {
         c.drawRect(24, 24, w - 24, h - 24, p);
         p.setTextSize(48f);
         p.setColor(Color.WHITE);
-        c.drawText("IceCam v9.4.5 renderer sandbox", 72, 120, p);
+        c.drawText("IceCam v9.4.6 renderer sandbox", 72, 120, p);
         p.setTextSize(30f);
         c.drawText("passive placeholder producer — no frame injection", 72, 175, p);
         p.setTextSize(24f);
@@ -199,14 +203,49 @@ public final class RendererSandbox {
     }
 
     private static void appendFile(String path, String data) {
-        try {
-            File f = new File(path);
-            File d = f.getParentFile();
-            if (d != null && !d.exists()) d.mkdirs();
-            FileOutputStream out = new FileOutputStream(f, true);
-            out.write(data.getBytes("UTF-8"));
-            out.close();
-        } catch (Throwable ignored) {}
+        // v9.4.6: target app processes must not write /data/adb under SELinux enforcing.
+        // Renderer telemetry is exported from logcat instead.
+    }
+
+
+    private static String trim(String s, int max) {
+        if (s == null) return "null";
+        return s.length() <= max ? s : s.substring(0, max) + "...";
+    }
+
+    private static String jsonString(String json, String key, String fallback) {
+        if (json == null) return fallback;
+        String needle = "\"" + key + "\"";
+        int i = json.indexOf(needle);
+        if (i < 0) return fallback;
+        int colon = json.indexOf(':', i + needle.length());
+        if (colon < 0) return fallback;
+        int q = json.indexOf('\"', colon + 1);
+        if (q < 0) return fallback;
+        StringBuilder out = new StringBuilder();
+        boolean esc = false;
+        for (int x = q + 1; x < json.length(); x++) {
+            char ch = json.charAt(x);
+            if (esc) { out.append(ch); esc = false; continue; }
+            if (ch == '\\') { esc = true; continue; }
+            if (ch == '\"') return out.toString();
+            out.append(ch);
+        }
+        return fallback;
+    }
+
+    private static String jsonRaw(String json, String key, String fallback) {
+        if (json == null) return fallback;
+        String needle = "\"" + key + "\"";
+        int i = json.indexOf(needle);
+        if (i < 0) return fallback;
+        int colon = json.indexOf(':', i + needle.length());
+        if (colon < 0) return fallback;
+        int start = colon + 1;
+        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
+        int end = start;
+        while (end < json.length() && ",}".indexOf(json.charAt(end)) < 0) end++;
+        return json.substring(start, end).trim().replace("\"", "");
     }
 
     private static String objectId(Object o) {
