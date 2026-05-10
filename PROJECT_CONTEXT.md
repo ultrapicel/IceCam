@@ -1,10 +1,10 @@
 # IceCam Project Context
 
-Current version: v9.6.4-single-preview-surface-renderer.
+Current version: v9.6.5-immediate-single-preview-renderer.
 
 Main direction: universal system-level Android camera replacement. LSPosed hooks are telemetry/fallback; the preferred future route remains Camera2/CaptureSession/Surface path first, then camera-provider/HAL/vendor shim feasibility.
 
-v9.6.4 changes the previous v9.6.3 bounded renderer into a safer single-preview-surface renderer:
+v9.6.5 changes the previous v9.6.3 bounded renderer into a safer single-preview-surface renderer:
 
 - classify Camera2 target surfaces;
 - deny ImageReader/Chrome/WebRTC surfaces;

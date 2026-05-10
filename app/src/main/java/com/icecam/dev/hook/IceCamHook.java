@@ -42,7 +42,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static final String SESSION_EVENTS = CACHE_DIR + "/capture_session_events.jsonl";
     private static final String SURFACE_EVENTS = CACHE_DIR + "/surface_events.jsonl";
     private static final String SURFACE_OWNERSHIP_EVENTS = CACHE_DIR + "/surface_ownership_events.jsonl";
-    private static final String VERSION = "v9.6.4-single-preview-surface-renderer";
+    private static final String VERSION = "v9.6.5-immediate-single-preview-renderer";
     private static final String PROVIDER_CONFIG_URI = "content://com.icecam.dev.provider/config";
     private static final String PROVIDER_STATE_URI = "content://com.icecam.dev.provider/state";
     private static final String PROVIDER_MEDIA_URI = "content://com.icecam.dev.provider/media-meta";
@@ -621,8 +621,26 @@ public class IceCamHook implements IXposedHookLoadPackage {
         final int seq;
         synchronized (SURFACE_SELECT_LOCK) {
             seq = ++candidateSeq;
+            SurfaceCandidate candidate = new SurfaceCandidate(lp, s, source, id, decision, seq);
+
+            // v9.6.5: restore the visible v9.6.3 behavior for the MIUI/System Camera path.
+            // On this stack the preview Surface becomes Canvas-locked by the camera pipeline quickly;
+            // waiting 450 ms made lockCanvas() fail with IllegalArgumentException before frame 1.
+            // Keep the v9.6.4 single-renderer guard, but start immediately for the allowlisted
+            // system camera preview Surface. Other targets still use delayed selection/log-only policy.
+            boolean immediateSystemCamera = "com.android.camera".equals(candidate.pkg)
+                    && "preview-candidate".equals(decision.kind)
+                    && source != null
+                    && source.contains("CaptureRequest.Builder.addTarget");
+            if (immediateSystemCamera) {
+                pendingCandidate = null;
+                logSurfaceSelect("candidate-immediate", candidate, "newId=" + id + " newScore=" + decision.score + " debounceMs=0 restore-v963-race-window");
+                startSingleRendererLocked(candidate);
+                return;
+            }
+
             if (pendingCandidate == null || decision.score >= pendingCandidate.decision.score) {
-                pendingCandidate = new SurfaceCandidate(lp, s, source, id, decision, seq);
+                pendingCandidate = candidate;
             }
             logSurfaceSelect("candidate-queued", pendingCandidate, "newId=" + id + " newScore=" + decision.score + " debounceMs=450");
             if (DEBOUNCE_THREAD == null || !DEBOUNCE_THREAD.isAlive()) {
@@ -759,7 +777,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
                 } catch (Throwable t) {
                     errors++;
                     logSurfaceRender("surface_render_error", shortErr(t));
-                    // v9.6.4 fail-safe: one lock/post exception is enough to release this target.
+                    // v9.6.5 fail-safe: one lock/post exception is enough to release this target.
                     break;
                 } finally {
                     try { if (c != null) surface.unlockCanvasAndPost(c); } catch (Throwable t) { errors++; logSurfaceRender("surface_render_error", "unlock=" + shortErr(t)); break; }
@@ -788,7 +806,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
             String cfg = providerConfig();
             String type = jsonString(cfg, "mediaType", "none");
             String uri = jsonString(cfg, "mediaStreamUri", "content://com.icecam.dev.provider/media-source");
-            if (!"image".equals(type) || uri == null || uri.length() == 0 || attachedContext == null) return null;
+            if (!("image".equals(type) || "photo".equals(type)) || uri == null || uri.length() == 0 || attachedContext == null) return null;
             java.io.InputStream in = attachedContext.getContentResolver().openInputStream(Uri.parse(uri));
             try { return BitmapFactory.decodeStream(in); }
             finally { try { if (in != null) in.close(); } catch (Throwable ignored) {} }
@@ -819,7 +837,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
         c.drawRect(8, 8, w - 8, h - 8, p);
         p.setStyle(Paint.Style.FILL);
         p.setTextSize(Math.max(18f, w / 55f));
-        c.drawText("IceCam v9.6.4 image renderer · frame " + frame, 24, Math.min(h - 24, 48), p);
+        c.drawText("IceCam v9.6.5 image renderer · frame " + frame, 24, Math.min(h - 24, 48), p);
     }
 
     private static void drawContinuousPattern(Canvas c, int frame) {
@@ -841,7 +859,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
         p.setStyle(Paint.Style.FILL);
         p.setTextSize(Math.max(28f, w / 24f));
         p.setColor(Color.WHITE);
-        c.drawText("IceCam v9.6.4", 48, Math.min(h - 80, 110), p);
+        c.drawText("IceCam v9.6.5", 48, Math.min(h - 80, 110), p);
         p.setTextSize(Math.max(20f, w / 42f));
         c.drawText("single preview Surface renderer · frame " + frame, 48, Math.min(h - 40, 160), p);
     }
@@ -863,7 +881,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
                 c.drawRect(20, 20, Math.max(60, c.getWidth()-20), Math.max(60, c.getHeight()-20), p);
                 p.setTextSize(Math.max(28f, c.getWidth() / 24f));
                 p.setColor(Color.WHITE);
-                c.drawText("IceCam v9.6.4", 48, Math.min(c.getHeight()-60, 110), p);
+                c.drawText("IceCam v9.6.5", 48, Math.min(c.getHeight()-60, 110), p);
                 p.setTextSize(Math.max(20f, c.getWidth() / 40f));
                 c.drawText("Camera2 surface single paint fallback", 48, Math.min(c.getHeight()-30, 160), p);
                 result = "paint-ok:" + c.getWidth() + "x" + c.getHeight();

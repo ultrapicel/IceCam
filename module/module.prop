@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam v9.6.4 Single Preview Surface Renderer
-version=v9.6.4-single-preview-surface-renderer
+name=IceCam v9.6.5 Single Preview Surface Renderer
+version=v9.6.5-immediate-single-preview-renderer
 versionCode=960
 author=IceCam
 summary=IceCam root control layer, LSPosed camera telemetry, provider bridge, auto-pipeline, Camera1 fallback, Camera2 surface shadow probe, safe storage bootstrap, and debug bundles for Android 12-15

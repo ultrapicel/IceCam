@@ -1,12 +1,12 @@
-# IceCam v9.6.4 — Single Preview Surface Renderer
+# IceCam v9.6.5 — Single Preview Surface Renderer
 
-`v9.6.4-single-preview-surface-renderer` continues the Camera2 Surface/CaptureSession path from v9.6.3, but changes the renderer from aggressive multi-surface painting to a conservative single-preview target model.
+`v9.6.5-immediate-single-preview-renderer` continues the Camera2 Surface/CaptureSession path from v9.6.3, but changes the renderer from aggressive multi-surface painting to a conservative single-preview target model.
 
 ## Goal
 
 IceCam is still aimed at universal Android camera replacement, not a Telegram/Chrome-specific hook. The LSPosed layer remains a diagnostic/fallback layer while the long-term direction is a lower-level system camera/provider/HAL pipeline.
 
-## Added in v9.6.4
+## Added in v9.6.5
 
 - Single active preview Surface renderer per process.
 - Surface scoring before rendering.
@@ -36,9 +36,9 @@ IceCam is still aimed at universal Android camera replacement, not a Telegram/Ch
 
 ## GitHub Actions artifacts
 
-- `IceCam-app-v9.6.4.apk`
-- `IceCam-root-module-v9.6.4.zip`
-- `IceCam-source-snapshot-v9.6.4.zip`
+- `IceCam-app-v9.6.5.apk`
+- `IceCam-root-module-v9.6.5.zip`
+- `IceCam-source-snapshot-v9.6.5.zip`
 
 ## Test flow
 
@@ -48,7 +48,7 @@ IceCam is still aimed at universal Android camera replacement, not a Telegram/Ch
 4. Enable Auto Pipeline / replacement mode.
 5. Test first in system Camera app, then Telegram, then Chrome/WebRTC.
 6. Export Lite Debug Bundle.
-7. Send `icecam_debug_v9.6.4_<timestamp>.tar.gz` plus screenshots.
+7. Send `icecam_debug_v9.6.5_<timestamp>.tar.gz` plus screenshots.
 
 ## Required regression checks
 
