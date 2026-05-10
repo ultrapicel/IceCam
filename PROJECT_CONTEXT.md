@@ -1,32 +1,17 @@
-# IceCam project context
+# IceCam Project Context
 
-Current version: v9.4.
+Current version: v9.4.2.
 
-Purpose: Android app + root module + LSPosed hook layer for broad camera-stack interception on Android 12-15. Goal is broad compatibility with most apps using Camera1, Camera2, CameraX, WebRTC/WebView and later NDK camera path, not only Telegram/Chrome/Camera. Telegram/Chrome/Camera are test targets.
+Goal: Android app + root module + LSPosed hook layer for broad camera-stack telemetry and future system camera stream replacement on Android 12–15.
 
-Current status:
-- LSPosed module loading works.
-- Camera1/Camera2 hooks work.
-- openCamera/getCameraIdList/getCameraCharacteristics are traced.
-- createCaptureSession, CaptureRequest.Builder, OutputConfiguration, Surface, ImageReader traces are implemented.
-- Root module creates /data/adb/icecam with logs/config/cache/state/media.
-- icecamctl supports status, prepare-hooks, start, stop, logs, full-logs, clear-logs, reset-dev-data.
-- UI has glass-style diagnostic flow, prefs persistence, startup root check.
-- Debug bundle has lite/full modes.
+Current implementation is passive. It does not inject frames yet.
 
-Known not implemented yet:
-- real frame replacement
-- Surface replacement
-- OpenGL/MediaCodec renderer
-- virtual camera provider
-- stealth release mode
+v9.4.2 adds root startup/bootstrap reliability and cleanup:
 
-Current step implemented: v9.4 renderer sandbox. Prepared internal renderer thread, placeholder frame producer, SurfaceTexture ownership tracking, and renderer telemetry. Do not yet claim working camera replacement.
+- app startup runs `icecamctl bootstrap-app` through `su`;
+- root module cleans stale v9.x debug/cache/temp files on install/prepare/start;
+- app permission/appops bootstrap is attempted from root;
+- root markers are persisted in `/data/adb/icecam/state/root_granted*`;
+- renderer sandbox diagnostics from v9.4.1 remain enabled.
 
-Important constraints:
-- GitHub ZIP must include .github/workflows/build.yml at repository root.
-- Do not use de.robv.android.xposed:api:82.
-- Use local xposed-api-stub.jar / xposed_stub_src only.
-- Do not use XposedHelpers.findAndHookMethod due LSPosed runtime mismatch. Use XposedBridge.hookAllMethods.
-- Keep debug bundle compact; full logs only in full debug mode.
-- Filter noisy events such as com.icecam.dev and Surface.isValid spam.
+Next stage after verifying logs: v9.5 experimental Surface injection. Do not proceed until renderer logcat events, root bootstrap markers, target LOAD/openCamera/createCaptureSession, and clean debug bundle counters are confirmed.

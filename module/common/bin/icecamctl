@@ -6,9 +6,52 @@ STATE="$ICE/state"
 MEDIA="$ICE/media"
 CACHE="$ICE/cache"
 BIN="$ICE/bin"
-VERSION="v9.4"
+VERSION="v9.4.2"
 APP_PKG="com.icecam.dev"
 TARGETS="com.android.camera com.android.chrome org.telegram.messenger org.telegram.messenger.web"
+
+
+log_module() {
+  mkdir -p "$LOGS" 2>/dev/null
+  echo "$(date '+%F %T') $*" >> "$LOGS/module.log" 2>/dev/null
+}
+
+clean_legacy() {
+  # Keep current config/media/state where possible, but remove stale temp/debug/cache artefacts
+  # left by older v9.x builds and broken GitHub/module attempts.
+  mkdir -p "$ICE" /data/local/tmp 2>/dev/null
+  rm -rf /data/local/tmp/icecam_debug_* /data/local/tmp/icecam_full_debug_* 2>/dev/null
+  rm -rf "$ICE/tmp" "$ICE/debug" "$ICE/old" "$ICE/.old" 2>/dev/null
+  find "$ICE" -maxdepth 2 -type f \( \
+    -name '*.tmp' -o -name '*.bak' -o -name '*.old' -o -name '*~' -o \
+    -name 'surface_spam.log' -o -name 'full_logcat.txt' -o -name 'dmesg_full.txt' \
+  \) -delete 2>/dev/null
+  # Reset known noisy JSONL caches on install/prepare/start so new bundles reflect the current run.
+  : > "$CACHE/camera_profiles.jsonl" 2>/dev/null
+  : > "$CACHE/hook_access_probe.log" 2>/dev/null
+  : > "$CACHE/capture_session_events.jsonl" 2>/dev/null
+  : > "$CACHE/surface_events.jsonl" 2>/dev/null
+  : > "$CACHE/surface_ownership_events.jsonl" 2>/dev/null
+  : > "$CACHE/renderer_events.jsonl" 2>/dev/null
+  log_module "legacy cleanup completed"
+}
+
+grant_app_permissions() {
+  # Runtime permissions are requested by UI; root grants make reinstall/startup deterministic.
+  pm grant "$APP_PKG" android.permission.CAMERA 2>/dev/null
+  pm grant "$APP_PKG" android.permission.READ_EXTERNAL_STORAGE 2>/dev/null
+  pm grant "$APP_PKG" android.permission.READ_MEDIA_IMAGES 2>/dev/null
+  pm grant "$APP_PKG" android.permission.READ_MEDIA_VIDEO 2>/dev/null
+  appops set "$APP_PKG" CAMERA allow 2>/dev/null
+  appops set "$APP_PKG" READ_MEDIA_IMAGES allow 2>/dev/null
+  appops set "$APP_PKG" READ_MEDIA_VIDEO allow 2>/dev/null
+  appops set "$APP_PKG" READ_EXTERNAL_STORAGE allow 2>/dev/null
+  appops set "$APP_PKG" MANAGE_EXTERNAL_STORAGE allow 2>/dev/null
+  echo 1 > "$STATE/root_granted" 2>/dev/null
+  echo "$(date '+%F %T')" > "$STATE/root_granted_at" 2>/dev/null
+  chmod 666 "$STATE/root_granted" "$STATE/root_granted_at" 2>/dev/null
+  log_module "app permission bootstrap completed for $APP_PKG"
+}
 
 init_dirs() {
   mkdir -p "$BIN" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE"
@@ -21,7 +64,7 @@ init_dirs() {
   chmod 666 "$STATE/active" "$STATE/prepared" 2>/dev/null
   [ -f "$CONFIG/app_config.json" ] || cat > "$CONFIG/app_config.json" <<JSON
 {
-  "version":"9.4-renderer-sandbox",
+  "version":"9.4.2-root-bootstrap-cleanup",
   "active":false,
   "mode":"log-only",
   "cameraMode":"auto",
@@ -29,7 +72,7 @@ init_dirs() {
   "mediaType":"none",
   "mediaPath":"/data/adb/icecam/media/source",
   "mediaMetaPath":"/data/adb/icecam/media/source.meta.json",
-  "pipelineStage":"renderer-sandbox-passive"
+  "pipelineStage":"renderer-sandbox-diagnostics-passive-root-bootstrap"
 }
 JSON
   chmod 666 "$CONFIG/app_config.json" 2>/dev/null
@@ -112,6 +155,7 @@ collect_lite_debug_bundle() {
   grep 'CaptureSessionJson' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" | sed 's/^.*CaptureSessionJson //' > "$TMP/icecam/cache/capture_session_events_from_logcat.jsonl" 2>/dev/null
   grep 'SurfaceJson' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" | sed 's/^.*SurfaceJson //' > "$TMP/icecam/cache/surface_events_from_logcat.jsonl" 2>/dev/null
   grep 'SurfaceOwnerJson' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" | sed 's/^.*SurfaceOwnerJson //' > "$TMP/icecam/cache/surface_ownership_from_logcat.jsonl" 2>/dev/null
+  grep 'RendererSandboxJson' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" | sed 's/^.*RendererSandboxJson //' > "$TMP/icecam/cache/renderer_events_from_logcat.jsonl" 2>/dev/null
   grep 'AccessProbe' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" > "$TMP/icecam/cache/hook_access_probe_from_logcat.txt" 2>/dev/null
   logcat -b crash -d -v threadtime | grep -E 'IceCam|LSPosed|Xposed|Camera|android.hardware.camera|org.telegram|chrome' | tail -n 500 > "$TMP/logcat/crash_filtered.txt" 2>&1
 
@@ -151,6 +195,7 @@ collect_lite_debug_bundle() {
   echo "surface_json_count=$(wc -l < "$TMP/icecam/cache/surface_events_from_logcat.jsonl" 2>/dev/null)" >> "$TMP/summary.txt"
   echo "surface_ownership_count=$(wc -l < "$TMP/icecam/cache/surface_ownership_from_logcat.jsonl" 2>/dev/null)" >> "$TMP/summary.txt"
   echo "renderer_event_count=$(wc -l < "$TMP/icecam/cache/renderer_events.jsonl" 2>/dev/null)" >> "$TMP/summary.txt"
+  echo "renderer_logcat_count=$(wc -l < "$TMP/icecam/cache/renderer_events_from_logcat.jsonl" 2>/dev/null)" >> "$TMP/summary.txt"
   echo "capture_request_target_count=$(grep -c 'CaptureRequest.Builder.addTarget\|requestTargets' "$TMP/logcat/icecam_camera_lsposed_filtered.txt" 2>/dev/null)" >> "$TMP/summary.txt"
 
   find "$TMP" -type f -size +800k -exec sh -c 'tail -c 800000 "$1" > "$1.trim" && mv "$1.trim" "$1"' _ {} \; 2>/dev/null
@@ -199,6 +244,12 @@ collect_full_debug_bundle() {
 init_dirs
 
 case "$1" in
+  bootstrap-app)
+    init_dirs
+    clean_legacy
+    grant_app_permissions
+    echo "bootstrap completed"
+    ;;
   status)
     echo "IceCam status"
     echo "version=$VERSION"
@@ -207,12 +258,16 @@ case "$1" in
     echo "module_dir=$ICE"
     echo "active=$(cat "$STATE/active" 2>/dev/null)"
     echo "prepared=$(cat "$STATE/prepared" 2>/dev/null)"
+    echo "root_granted=$(cat "$STATE/root_granted" 2>/dev/null)"
+    echo "root_granted_at=$(cat "$STATE/root_granted_at" 2>/dev/null)"
     echo "media=$(ls -l "$MEDIA/source" 2>/dev/null)"
     echo "config=$(cat "$CONFIG/app_config.json" 2>/dev/null)"
     echo "logs=$LOGS"
     echo "lspd_log_dir=/data/adb/lspd/log"
     ;;
   prepare-hooks)
+    clean_legacy
+    grant_app_permissions
     echo "$(date '+%F %T') prepare-hooks requested" >> "$LOGS/hook.log"
     echo 1 > "$STATE/prepared"
     [ -f "$STATE/active" ] || echo 0 > "$STATE/active"
@@ -222,6 +277,8 @@ case "$1" in
     echo "prepared hooks"
     ;;
   start)
+    clean_legacy
+    grant_app_permissions
     echo 1 > "$STATE/active"
     chmod 666 "$STATE/active" 2>/dev/null
     chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
@@ -252,7 +309,7 @@ case "$1" in
     echo 0 > "$STATE/prepared"
     cat > "$CONFIG/app_config.json" <<JSON
 {
-  "version":"9.4-renderer-sandbox",
+  "version":"9.4.2-root-bootstrap-cleanup",
   "active":false,
   "mode":"log-only",
   "cameraMode":"auto",
@@ -260,7 +317,7 @@ case "$1" in
   "mediaType":"none",
   "mediaPath":"/data/adb/icecam/media/source",
   "mediaMetaPath":"/data/adb/icecam/media/source.meta.json",
-  "pipelineStage":"renderer-sandbox-passive"
+  "pipelineStage":"renderer-sandbox-diagnostics-passive-root-bootstrap"
 }
 JSON
     chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
@@ -280,7 +337,7 @@ JSON
     echo "logs cleared"
     ;;
   *)
-    echo "usage: icecamctl status|prepare-hooks|start|stop|logs|lite-logs|full-logs|clear-logs|reset-dev-data|clean-all"
+    echo "usage: icecamctl bootstrap-app|status|prepare-hooks|start|stop|logs|lite-logs|full-logs|clear-logs|reset-dev-data|clean-all"
     exit 2
     ;;
 esac

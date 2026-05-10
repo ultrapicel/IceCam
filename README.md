@@ -1,85 +1,39 @@
-# IceCam v9.4 — Renderer Sandbox
+# IceCam v9.4.2 — Root Bootstrap Cleanup + Renderer Diagnostics
 
-`v9.4-renderer-sandbox` is still **passive telemetry only**. It does not inject frames and does not replace a camera stream yet.
+`v9.4.2-root-bootstrap-cleanup` is still passive telemetry only. It does not inject frames and does not replace a camera stream yet.
 
-This build adds the first internal renderer sandbox layer while preserving the v9.3.3 camera/surface tracing path.
+## Added in v9.4.2
 
-## Added in v9.4
+- Root bootstrap from app startup via `icecamctl bootstrap-app`.
+- Root-side permission/appops grant attempt for `com.icecam.dev`.
+- Install/start/prepare cleanup for stale v9.x temp/cache/debug artefacts.
+- Persistent root bootstrap markers: `/data/adb/icecam/state/root_granted` and `root_granted_at`.
+- v9.4.1 renderer diagnostics remain active: renderer thread, placeholder producer, owned SurfaceTexture telemetry.
 
-- Passive `RendererSandbox` class.
-- Internal `HandlerThread` named `IceCamRendererSandbox`.
-- Owned `SurfaceTexture` + owned `Surface` allocation.
-- Placeholder `Bitmap` producer metadata.
-- 30 fps timing tick telemetry.
-- New cache file: `/data/adb/icecam/cache/renderer_events.jsonl`.
-- Debug bundle now includes renderer events and renderer counters.
+## Still disabled
 
-Renderer startup is gated behind camera activity and `/data/adb/icecam/state/active=1`; it is not started for every loaded process.
+- fake frame injection
+- Surface replacement
+- virtual camera provider
+- CameraDevice proxy replacement
 
-## Still not implemented
+## Expected GitHub Actions artifacts
 
-- Fake frame injection.
-- Target Surface replacement.
-- OpenGL compositing.
-- MediaCodec decode/render pipeline.
-- Virtual camera provider.
-- Native/NDK camera path.
+- `IceCam-app-v9.4.2.apk`
+- `IceCam-root-module-v9.4.2.zip`
+- `IceCam-source-snapshot-v9.4.2.zip`
 
-## GitHub Actions artifacts
+## Test flow
 
-The workflow produces:
+1. Install/update root module.
+2. Install APK.
+3. Open IceCam once; root should be requested at startup.
+4. Press `Prepare Hook Layer`.
+5. Select media.
+6. Press `Start Replacement`.
+7. Open Camera/Telegram/Chrome camera for 5–10 seconds.
+8. Export Lite Debug Bundle.
 
-- `IceCam-app-v9.4.apk`
-- `IceCam-root-module-v9.4.zip`
-- `IceCam-source-snapshot-v9.4.zip`
-- `build-info.txt`
+Lite bundle path:
 
-## Install / test matrix
-
-| Component | Action |
-|---|---|
-| APK | Update/install |
-| Root module | Reinstall |
-| Reboot | Required |
-| LSPosed scope | Camera, Telegram, Chrome, target apps |
-
-## Diagnostic flow
-
-Use Dashboard steps:
-
-1. Root Check
-2. Prepare Hook Layer
-3. Select Photo or Video
-4. Start Replacement
-5. Open target camera manually: Camera / Telegram / Chrome / another target app
-6. Export Lite Debug Bundle
-
-Expected output:
-
-`/sdcard/Download/icecam_debug_v9.4_<timestamp>.tar.gz`
-
-Important files inside:
-
-- `summary.txt`
-- `icecam/logs/hook.log`
-- `icecam/cache/renderer_events.jsonl`
-- `icecam/cache/camera_profiles_from_logcat.jsonl`
-- `icecam/cache/capture_session_events_from_logcat.jsonl`
-- `icecam/cache/surface_events_from_logcat.jsonl`
-- `icecam/cache/surface_ownership_from_logcat.jsonl`
-- `media/source.meta.json`
-- `logcat/icecam_camera_lsposed_filtered.txt`
-
-## Success criteria for v9.4
-
-The bundle should show:
-
-- `[LOAD]`
-- `openCamera`
-- `createCaptureSession`
-- `SurfaceOwnerJson`
-- `CaptureRequest.Builder.addTarget` and/or `requestTargets`
-- `RendererSandbox` init/tick events
-- `renderer_event_count` greater than zero in `summary.txt`
-
-If these are present, the next stage is v9.5 experimental Surface injection. Frame injection remains disabled in v9.4.
+`/sdcard/Download/icecam_debug_v9.4.2_<timestamp>.tar.gz`

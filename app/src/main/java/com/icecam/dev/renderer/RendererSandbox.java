@@ -26,7 +26,8 @@ import java.util.Date;
  */
 public final class RendererSandbox {
     private static final String TAG = "IceCam/RendererSandbox";
-    private static final String VERSION = "v9.4-renderer-sandbox";
+    private static final String LOG_PREFIX = "RendererSandboxJson ";
+    private static final String VERSION = "v9.4.2-root-bootstrap-cleanup";
     private static final String CONFIG = "/data/adb/icecam/config/app_config.json";
     private static final String ACTIVE = "/data/adb/icecam/state/active";
     private static final String CACHE_DIR = "/data/adb/icecam/cache";
@@ -141,7 +142,7 @@ public final class RendererSandbox {
         c.drawRect(24, 24, w - 24, h - 24, p);
         p.setTextSize(48f);
         p.setColor(Color.WHITE);
-        c.drawText("IceCam v9.4 renderer sandbox", 72, 120, p);
+        c.drawText("IceCam v9.4.2 renderer sandbox", 72, 120, p);
         p.setTextSize(30f);
         c.drawText("passive placeholder producer — no frame injection", 72, 175, p);
         p.setTextSize(24f);
@@ -193,7 +194,7 @@ public final class RendererSandbox {
                 + "\",\"process\":\"" + esc(ownerProcess)
                 + "\",\"thread\":\"" + esc(Thread.currentThread().getName())
                 + "\",\"detail\":\"" + esc(detail) + "\"}";
-        try { Log.i(TAG, json); } catch (Throwable ignored) {}
+        try { Log.i(TAG, LOG_PREFIX + json); } catch (Throwable ignored) {}
         appendFile(EVENTS, json + "\n");
     }
 

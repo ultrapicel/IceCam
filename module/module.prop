@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam v9.4 Renderer Sandbox
-version=9.4-renderer-sandbox
-versionCode=940
+name=IceCam v9.4.2 Root Bootstrap Cleanup
+version=9.4.2-root-bootstrap-cleanup
+versionCode=942
 author=IceCam
-summary=IceCam root control layer, LSPosed telemetry, profile cache, lite debug bundle, startup root check, settings persistence, cleanup, and Surface ownership mapping
+summary=IceCam root control layer, LSPosed telemetry, profile cache, lite debug bundle, startup root permission bootstrap, settings persistence, install cleanup, and Surface ownership mapping

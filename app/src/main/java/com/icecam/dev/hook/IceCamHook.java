@@ -30,6 +30,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static final String SESSION_EVENTS = CACHE_DIR + "/capture_session_events.jsonl";
     private static final String SURFACE_EVENTS = CACHE_DIR + "/surface_events.jsonl";
     private static final String SURFACE_OWNERSHIP_EVENTS = CACHE_DIR + "/surface_ownership_events.jsonl";
+    private static final String VERSION = "9.4.2-root-bootstrap-cleanup";
 
     @Override
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lp) throws Throwable {
@@ -49,15 +50,17 @@ public class IceCamHook implements IXposedHookLoadPackage {
         accessProbe(lp);
 
         safeInit("hookCamera2.CameraManager", new Runnable() { public void run() { hookCameraManager(lp); } });
-        safeInit("hookCamera2.CameraDevice", new Runnable() { public void run() { hookCameraDevice(lp); } });
-        safeInit("hookCamera2.CameraCaptureSession", new Runnable() { public void run() { hookCameraSession(lp); } });
+        safeInit("hookCamera2.CameraDeviceImpl", new Runnable() { public void run() { hookCameraDeviceImpl(lp); } });
+        safeInit("hookCamera2.CameraCaptureSessionImpl", new Runnable() { public void run() { hookCameraSessionImpl(lp); } });
         safeInit("hookCamera1", new Runnable() { public void run() { hookCamera1(lp); } });
         safeInit("hookSurfaceTrace", new Runnable() { public void run() { hookSurfaceTrace(lp); } });
         safeInit("hookSurfaceOwnershipTrace", new Runnable() { public void run() { hookSurfaceOwnershipTrace(lp); } });
     }
 
     private static void ensureRenderer(XC_LoadPackage.LoadPackageParam lp, String reason) {
-        if (!active()) return;
+        // v9.4.2: do not gate renderer startup on /data/adb active read.
+        // On Android 13+ target app contexts can hit SELinux EACCES on /data/adb,
+        // which made v9.4 report active=false and never start the sandbox.
         try {
             RendererSandbox.ensureStarted(lp.packageName, lp.processName);
             log("[RendererSandbox] ensure reason=" + reason + " " + RendererSandbox.snapshot());
@@ -134,39 +137,47 @@ public class IceCamHook implements IXposedHookLoadPackage {
         });
     }
 
-    private void hookCameraDevice(final XC_LoadPackage.LoadPackageParam lp) {
-        final Class<?> cd = findClassBoot("android.hardware.camera2.CameraDevice");
+    private void hookCameraDeviceImpl(final XC_LoadPackage.LoadPackageParam lp) {
+        Class<?> cd = findClassBoot("android.hardware.camera2.impl.CameraDeviceImpl");
+        if (cd == null) {
+            log("[WARN] CameraDeviceImpl unavailable; falling back to CameraDevice with abstract-safe hook filter");
+            cd = findClassBoot("android.hardware.camera2.CameraDevice");
+        }
         if (cd == null) return;
 
         hookAll(cd, "createCaptureSession", new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
                 ensureRenderer(lp, "CameraDevice.createCaptureSession");
-                logEvent(lp, "[Camera2] CameraDevice.createCaptureSession", p);
-                surfaceOwnerEvent(lp, "CameraDevice.createCaptureSession", p, null);
+                logEvent(lp, "[Camera2] CameraDeviceImpl.createCaptureSession", p);
+                surfaceOwnerEvent(lp, "CameraDeviceImpl.createCaptureSession", p, null);
             }
             @Override protected void afterHookedMethod(MethodHookParam p) {
-                log("[Camera2] CameraDevice.createCaptureSession after package=" + lp.packageName
+                log("[Camera2] CameraDeviceImpl.createCaptureSession after package=" + lp.packageName
                         + " active=" + active() + " mode=" + mode());
-                surfaceOwnerEvent(lp, "CameraDevice.createCaptureSession.after", p, p.getResult());
+                surfaceOwnerEvent(lp, "CameraDeviceImpl.createCaptureSession.after", p, p.getResult());
             }
         });
 
         hookAll(cd, "createCaptureRequest", new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
-                logEvent(lp, "[Camera2] CameraDevice.createCaptureRequest", p);
-                surfaceOwnerEvent(lp, "CameraDevice.createCaptureRequest", p, null);
+                logEvent(lp, "[Camera2] CameraDeviceImpl.createCaptureRequest", p);
+                surfaceOwnerEvent(lp, "CameraDeviceImpl.createCaptureRequest", p, null);
             }
         });
 
         hookAll(cd, "close", new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
-                logEvent(lp, "[Camera2] CameraDevice.close", p);
+                logEvent(lp, "[Camera2] CameraDeviceImpl.close", p);
             }
         });
     }
 
-    private void hookCameraSession(final XC_LoadPackage.LoadPackageParam lp) {
-        final Class<?> cs = findClassBoot("android.hardware.camera2.CameraCaptureSession");
+    private void hookCameraSessionImpl(final XC_LoadPackage.LoadPackageParam lp) {
+        Class<?> cs = findClassBoot("android.hardware.camera2.impl.CameraCaptureSessionImpl");
+        if (cs == null) {
+            log("[WARN] CameraCaptureSessionImpl unavailable; falling back to CameraCaptureSession with abstract-safe hook filter");
+            cs = findClassBoot("android.hardware.camera2.CameraCaptureSession");
+        }
         if (cs == null) return;
         hookAll(cs, "setRepeatingRequest", new XC_MethodHook() {
             @Override protected void beforeHookedMethod(MethodHookParam p) {
@@ -208,7 +219,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     private static void sessionEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p) {
         if (!shouldTrace(lp, action)) return;
-        String json = "{\"version\":\"9.4-renderer-sandbox\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"9.4.2-root-bootstrap-cleanup\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"active\":" + active()
                 + ",\"mode\":\"" + esc(mode()) + "\",\"mediaExists\":" + new File(MEDIA).exists()
@@ -275,7 +286,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     private static void surfaceEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p) {
         if (!shouldTrace(lp, action)) return;
-        String json = "{\"version\":\"9.4-renderer-sandbox\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"9.4.2-root-bootstrap-cleanup\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"thread\":\"" + esc(Thread.currentThread().getName())
                 + "\",\"active\":" + active() + ",\"mode\":\"" + esc(mode())
@@ -333,7 +344,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     private static void surfaceOwnerEvent(XC_LoadPackage.LoadPackageParam lp, String action, XC_MethodHook.MethodHookParam p, Object focus) {
         if (!shouldTrace(lp, action)) return;
-        String json = "{\"version\":\"9.4-renderer-sandbox\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
+        String json = "{\"version\":\"9.4.2-root-bootstrap-cleanup\",\"ts\":\"" + esc(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()))
                 + "\",\"package\":\"" + esc(lp.packageName) + "\",\"process\":\"" + esc(lp.processName)
                 + "\",\"action\":\"" + esc(action) + "\",\"thread\":\"" + esc(Thread.currentThread().getName())
                 + "\",\"active\":" + active() + ",\"mode\":\"" + esc(mode())
@@ -532,7 +543,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static String profileJson(XC_LoadPackage.LoadPackageParam lp, String id, CameraCharacteristics cc) {
         StringBuilder sb = new StringBuilder();
         sb.append('{');
-        field(sb, "version", "9.4-renderer-sandbox", true);
+        field(sb, "version", "9.4.2-root-bootstrap-cleanup", true);
         field(sb, "ts", new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(new Date()), false);
         field(sb, "package", lp.packageName, false);
         field(sb, "process", lp.processName, false);
@@ -656,12 +667,29 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
     private static void hookAll(Class<?> cls, String methodName, XC_MethodHook cb) {
         try {
+            if (hasOnlyAbstractMethods(cls, methodName)) {
+                log("[SKIP_ABSTRACT] " + cls.getName() + "." + methodName + " all matching methods are abstract");
+                return;
+            }
             Set<?> hooks = XposedBridge.hookAllMethods(cls, methodName, cb);
             log("[HOOKED] " + cls.getName() + "." + methodName + " count=" + (hooks == null ? "null" : String.valueOf(hooks.size())));
         } catch (Throwable t) {
             log("[ERR] hookAllMethods " + cls.getName() + "." + methodName + " " + stack(t));
             xlog(t);
         }
+    }
+
+    private static boolean hasOnlyAbstractMethods(Class<?> cls, String methodName) {
+        boolean found = false;
+        try {
+            java.lang.reflect.Method[] methods = cls.getDeclaredMethods();
+            for (java.lang.reflect.Method m : methods) {
+                if (!methodName.equals(m.getName())) continue;
+                found = true;
+                if (!java.lang.reflect.Modifier.isAbstract(m.getModifiers())) return false;
+            }
+        } catch (Throwable ignored) {}
+        return found;
     }
 
     private static void logEvent(XC_LoadPackage.LoadPackageParam lp, String event, XC_MethodHook.MethodHookParam p) {

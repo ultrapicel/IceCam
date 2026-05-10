@@ -9,4 +9,5 @@ chmod 755 /data/adb 2>/dev/null
 chmod 777 $ICE $ICE/logs $ICE/state $ICE/config $ICE/media $ICE/cache 2>/dev/null
 touch $ICE/logs/module.log $ICE/logs/hook.log
 chmod 666 $ICE/logs/module.log $ICE/logs/hook.log 2>/dev/null
+$ICE/bin/icecamctl bootstrap-app >> $ICE/logs/module.log 2>&1
 $ICE/bin/icecamctl status >> $ICE/logs/module.log 2>&1
