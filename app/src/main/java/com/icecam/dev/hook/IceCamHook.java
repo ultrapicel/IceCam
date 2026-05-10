@@ -38,7 +38,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static final String SESSION_EVENTS = CACHE_DIR + "/capture_session_events.jsonl";
     private static final String SURFACE_EVENTS = CACHE_DIR + "/surface_events.jsonl";
     private static final String SURFACE_OWNERSHIP_EVENTS = CACHE_DIR + "/surface_ownership_events.jsonl";
-    private static final String VERSION = "v9.6.1-auto-pipeline-camera2-surface-shadow";
+    private static final String VERSION = "v9.6.1.1.1-auto-pipeline-buildfix";
     private static final String PROVIDER_CONFIG_URI = "content://com.icecam.dev.provider/config";
     private static final String PROVIDER_STATE_URI = "content://com.icecam.dev.provider/state";
     private static final String PROVIDER_MEDIA_URI = "content://com.icecam.dev.provider/media-meta";
@@ -485,6 +485,10 @@ public class IceCamHook implements IXposedHookLoadPackage {
         try { return String.valueOf(o); } catch (Throwable t) { return shortErr(t); }
     }
 
+    private static String objectDetail(Object o) {
+        return surfaceOrObjectDetails(o);
+    }
+
 
     private static boolean isSelfPackage(XC_LoadPackage.LoadPackageParam lp) {
         return lp != null && ("com.icecam.dev".equals(lp.packageName) || "com.icecam.dev".equals(lp.processName));
@@ -548,7 +552,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
                 + "\",\"surface\":\"" + esc(objectDetail(s)) + "\",\"mode\":\"" + esc(mode()) + "\"}";
         try { Log.i(TAG, "Camera2SurfaceShadowJson " + json); } catch (Throwable ignored) {}
         xlog("IceCam/Hook Camera2SurfaceShadowJson " + json);
-        // v9.6.1 intentionally performs a conservative paint probe only. On many Camera2 preview
+        // v9.6.1.1 intentionally performs a conservative paint probe only. On many Camera2 preview
         // surfaces lockCanvas() is rejected because the camera HAL already owns the producer side.
         // We attempt a single non-fatal draw to classify whether this surface can be painted by app process.
         tryPaintSurfaceOnce(lp, s, source, id);
@@ -568,7 +572,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
                 c.drawRect(20, 20, Math.max(60, c.getWidth()-20), Math.max(60, c.getHeight()-20), p);
                 p.setTextSize(Math.max(28f, c.getWidth() / 24f));
                 p.setColor(Color.WHITE);
-                c.drawText("IceCam v9.6.1", 48, Math.min(c.getHeight()-60, 110), p);
+                c.drawText("IceCam v9.6.1.1", 48, Math.min(c.getHeight()-60, 110), p);
                 p.setTextSize(Math.max(20f, c.getWidth() / 40f));
                 c.drawText("Camera2 surface paint probe", 48, Math.min(c.getHeight()-30, 160), p);
                 result = "paint-ok:" + c.getWidth() + "x" + c.getHeight();

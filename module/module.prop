@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam v9.6.1 Auto Pipeline Surface Shadow
-version=v9.6.1-auto-pipeline-camera2-surface-shadow
+name=IceCam v9.6.1.1 Auto Pipeline Surface Shadow
+version=v9.6.1.1.1-auto-pipeline-buildfix
 versionCode=960
 author=IceCam
 summary=IceCam root control layer, LSPosed camera telemetry, provider bridge, auto-pipeline, Camera1 fallback, Camera2 surface shadow probe, safe storage bootstrap, and debug bundles for Android 12-15
