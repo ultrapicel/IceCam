@@ -9,7 +9,7 @@ import android.net.Uri;
 import android.os.Build;
 
 /**
- * v9.4.6 read-only IPC bridge for LSPosed target processes.
+ * v9.5.0 read-only IPC bridge for LSPosed target processes.
  *
  * Target apps must not read /data/adb/icecam directly: SELinux blocks
  * untrusted_app/isolated_app domains on Android 12-15. This provider exposes
@@ -20,7 +20,7 @@ public class IceCamStateProvider extends ContentProvider {
     public static final Uri CONFIG_URI = Uri.parse("content://" + AUTHORITY + "/config");
     public static final Uri STATE_URI = Uri.parse("content://" + AUTHORITY + "/state");
     public static final Uri MEDIA_META_URI = Uri.parse("content://" + AUTHORITY + "/media-meta");
-    private static final String VERSION = "v9.4.6-provider-cache-cleanup";
+    private static final String VERSION = "v9.5.0-system-camera-probe";
 
     @Override public boolean onCreate() { return true; }
 
@@ -55,7 +55,7 @@ public class IceCamStateProvider extends ContentProvider {
                 + q("mediaUri") + ":" + q(p.getString("mediaUri", "")) + ","
                 + q("mediaPath") + ":" + q("/data/adb/icecam/media/source") + ","
                 + q("mediaMetaPath") + ":" + q("/data/adb/icecam/media/source.meta.json") + ","
-                + q("pipelineStage") + ":" + q("provider-cache-renderer-sandbox-passive") + ","
+                + q("pipelineStage") + ":" + q("system-camera-provider-probe-passive") + ","
                 + q("loop") + ":" + p.getBoolean("loop", true) + ","
                 + q("mirror") + ":" + p.getBoolean("mirror", false) + ","
                 + q("zoom") + ":" + p.getFloat("zoom", 1.0f) + ","

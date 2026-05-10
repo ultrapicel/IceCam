@@ -27,7 +27,7 @@ import java.util.Date;
 public final class RendererSandbox {
     private static final String TAG = "IceCam/RendererSandbox";
     private static final String LOG_PREFIX = "RendererSandboxJson ";
-    private static final String VERSION = "v9.4.6-provider-cache-cleanup";
+    private static final String VERSION = "v9.5.0-system-camera-probe";
     private static final String CONFIG = "/data/adb/icecam/config/app_config.json";
     private static final String ACTIVE = "/data/adb/icecam/state/active";
     private static final String CACHE_DIR = "/data/adb/icecam/cache";
@@ -146,7 +146,7 @@ public final class RendererSandbox {
         c.drawRect(24, 24, w - 24, h - 24, p);
         p.setTextSize(48f);
         p.setColor(Color.WHITE);
-        c.drawText("IceCam v9.4.6 renderer sandbox", 72, 120, p);
+        c.drawText("IceCam v9.5.0 renderer sandbox", 72, 120, p);
         p.setTextSize(30f);
         c.drawText("passive placeholder producer — no frame injection", 72, 175, p);
         p.setTextSize(24f);
@@ -203,7 +203,7 @@ public final class RendererSandbox {
     }
 
     private static void appendFile(String path, String data) {
-        // v9.4.6: target app processes must not write /data/adb under SELinux enforcing.
+        // v9.5.0: target app processes must not write /data/adb under SELinux enforcing.
         // Renderer telemetry is exported from logcat instead.
     }
 

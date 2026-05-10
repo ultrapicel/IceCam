@@ -6,7 +6,7 @@ STATE="$ICE/state"
 MEDIA="$ICE/media"
 CACHE="$ICE/cache"
 BIN="$ICE/bin"
-VERSION="v9.4.6"
+VERSION="v9.5.0"
 APP_PKG="com.icecam.dev"
 TARGETS="com.android.camera com.android.chrome org.telegram.messenger org.telegram.messenger.web"
 
@@ -64,7 +64,7 @@ init_dirs() {
   chmod 666 "$STATE/active" "$STATE/prepared" 2>/dev/null
   [ -f "$CONFIG/app_config.json" ] || cat > "$CONFIG/app_config.json" <<JSON
 {
-  "version":"v9.4.6-provider-cache-cleanup",
+  "version":"v9.5.0-system-camera-probe",
   "active":false,
   "mode":"log-only",
   "cameraMode":"auto",
@@ -72,7 +72,7 @@ init_dirs() {
   "mediaType":"none",
   "mediaPath":"/data/adb/icecam/media/source",
   "mediaMetaPath":"/data/adb/icecam/media/source.meta.json",
-  "pipelineStage":"provider-cache-renderer-sandbox-passive"
+  "pipelineStage":"system-camera-provider-probe-passive"
 }
 JSON
   chmod 666 "$CONFIG/app_config.json" 2>/dev/null
@@ -103,13 +103,64 @@ append_cmd() {
   } >> "$OUTFILE" 2>&1
 }
 
+
+collect_system_camera_probe() {
+  OUTDIR="$1"
+  [ -n "$OUTDIR" ] || OUTDIR="$ICE/system_camera_probe"
+  mkdir -p "$OUTDIR" "$OUTDIR/hal" "$OUTDIR/dev" "$OUTDIR/vintf" "$OUTDIR/vendor" "$OUTDIR/services" "$OUTDIR/props" "$OUTDIR/selinux" 2>/dev/null
+
+  echo "IceCam system camera probe $VERSION" > "$OUTDIR/README.txt"
+  echo "created=$(date '+%F %T')" >> "$OUTDIR/README.txt"
+  echo "purpose=decide whether IceCam can move from app/API hooks toward system camera provider/HAL path" >> "$OUTDIR/README.txt"
+  echo "note=no patching is performed by this probe" >> "$OUTDIR/README.txt"
+
+  write_cmd "$OUTDIR/props/android_build.txt" getprop ro.build.version.release
+  getprop > "$OUTDIR/props/getprop_all.txt" 2>&1
+  getprop | grep -Ei 'camera|vendor.camera|persist.vendor.camera|ro.hardware|ro.product|ro.vendor|ro.board|ro.boot|vintf|treble|first_api_level|sdk|zygote' > "$OUTDIR/props/getprop_camera_relevant.txt" 2>&1
+
+  write_cmd "$OUTDIR/services/service_list_camera.txt" sh -c "service list | grep -i camera || true"
+  write_cmd "$OUTDIR/services/cmd_media_camera_ids.txt" sh -c "cmd media.camera get-camera-ids 2>&1 || true"
+  write_cmd "$OUTDIR/services/dumpsys_media_camera.txt" dumpsys media.camera
+  write_cmd "$OUTDIR/services/dumpsys_camera_provider.txt" sh -c "dumpsys android.hardware.camera.provider.ICameraProvider/default 2>&1 || true"
+  write_cmd "$OUTDIR/services/lshal_camera.txt" sh -c "lshal 2>/dev/null | grep -i camera || true"
+  write_cmd "$OUTDIR/services/hwservicemanager_camera.txt" sh -c "service list | grep -i hwservicemanager; lshal 2>/dev/null | grep -Ei 'android.hardware.camera|provider' || true"
+
+  write_cmd "$OUTDIR/dev/dev_video.txt" sh -c "ls -la /dev/video* 2>/dev/null || true"
+  write_cmd "$OUTDIR/dev/dev_media.txt" sh -c "ls -la /dev/media* /dev/v4l* 2>/dev/null || true"
+  write_cmd "$OUTDIR/dev/dev_video_selinux.txt" sh -c "ls -lZ /dev/video* /dev/media* /dev/v4l* 2>/dev/null || true"
+  write_cmd "$OUTDIR/dev/proc_config_v4l2.txt" sh -c "zcat /proc/config.gz 2>/dev/null | grep -Ei 'V4L2|VIDEO_DEV|UVC|V4L2LOOPBACK|MEDIA_SUPPORT' || true"
+  write_cmd "$OUTDIR/dev/sys_class_video4linux.txt" sh -c "find /sys/class/video4linux -maxdepth 3 -type f -name name -o -name index 2>/dev/null | sort | while read f; do echo '---'\$f; cat \$f 2>/dev/null; done || true"
+
+  write_cmd "$OUTDIR/hal/vendor_bin_hw_camera.txt" sh -c "ls -laZ /vendor/bin/hw/*camera* /odm/bin/hw/*camera* /system/bin/hw/*camera* 2>/dev/null || true"
+  write_cmd "$OUTDIR/hal/vendor_lib_camera.txt" sh -c "ls -laZ /vendor/lib*/hw/*camera* /odm/lib*/hw/*camera* /system/lib*/hw/*camera* 2>/dev/null || true"
+  write_cmd "$OUTDIR/hal/camera_provider_processes.txt" sh -c "ps -A -o USER,PID,PPID,NAME,ARGS 2>/dev/null | grep -Ei 'camera|provider' | grep -v grep || ps -A | grep -Ei 'camera|provider' || true"
+
+  write_cmd "$OUTDIR/vintf/manifest_camera_refs.txt" sh -c "grep -Rni 'android.hardware.camera\|camera.provider\|ICameraProvider' /vendor/etc/vintf /odm/etc/vintf /system/etc/vintf /system_ext/etc/vintf /product/etc/vintf 2>/dev/null || true"
+  write_cmd "$OUTDIR/vintf/external_camera_config.txt" sh -c "for f in /vendor/etc/external_camera_config.xml /odm/etc/external_camera_config.xml /system/etc/external_camera_config.xml /system_ext/etc/external_camera_config.xml; do [ -f \$f ] && echo '---'\$f && cat \$f; done 2>/dev/null || true"
+  write_cmd "$OUTDIR/vintf/camera_xml_listing.txt" sh -c "find /vendor/etc /odm/etc /system/etc /system_ext/etc /product/etc -maxdepth 4 -type f \( -iname '*camera*.xml' -o -iname '*camera*.json' -o -iname '*camera*.conf' \) -print 2>/dev/null | sort"
+
+  write_cmd "$OUTDIR/selinux/getenforce.txt" getenforce
+  write_cmd "$OUTDIR/selinux/camera_contexts.txt" sh -c "grep -Rni 'camera' /vendor/etc/selinux /odm/etc/selinux /system/etc/selinux /system_ext/etc/selinux 2>/dev/null | head -n 500 || true"
+  logcat -d -v threadtime | grep -i 'avc: denied' | grep -iE 'camera|provider|video|v4l|icecam|adb_data_file' | tail -n 800 > "$OUTDIR/selinux/avc_camera_denials.txt" 2>&1
+
+  cat > "$OUTDIR/system_camera_path_assessment.txt" <<EOF
+IceCam v9.5.0 assessment guide:
+- If /dev/video* exists and external camera provider is present, first route is external-camera/provider emulation.
+- If camera provider is AIDL-only, Android 14+ path likely needs vendor/AOSP-compatible provider service; root-only replacement is risky.
+- If V4L2/UVC/v4l2loopback kernel support is absent, virtual /dev/video route needs kernel module support for exact kernel.
+- If VINTF camera provider service is vendor-specific, Magisk overlay may not be enough; service registration and SELinux domains are blockers.
+- LSPosed remains fallback for API-level Surface/CaptureSession interception while system-provider route is investigated.
+EOF
+  echo "system camera probe written to $OUTDIR"
+}
+
 collect_lite_debug_bundle() {
   TS=$(date '+%Y%m%d_%H%M%S' 2>/dev/null)
   [ -n "$TS" ] || TS=now
   OUT=/sdcard/Download/icecam_debug_${VERSION}_${TS}.tar.gz
   TMP=/data/local/tmp/icecam_debug_${VERSION}_${TS}
   rm -rf "$TMP"
-  mkdir -p "$TMP" "$TMP/icecam/logs" "$TMP/icecam/config" "$TMP/icecam/state" "$TMP/icecam/cache" "$TMP/media" "$TMP/logcat" "$TMP/system" "$TMP/camera" "$TMP/packages" "$TMP/provider" "$TMP/selinux"
+  mkdir -p "$TMP" "$TMP/icecam/logs" "$TMP/icecam/config" "$TMP/icecam/state" "$TMP/icecam/cache" "$TMP/media" "$TMP/logcat" "$TMP/system" "$TMP/camera" "$TMP/packages" "$TMP/provider" "$TMP/selinux" "$TMP/system_camera_probe"
 
   FILTER_RE='IceCam/Hook|IceCam/Provider|ProviderBridgeJson|ProviderProbe|ProfileCacheJson|CaptureSessionJson|SurfaceOwnerJson|RendererSandbox|AccessProbe|LSPosed|Xposed|CameraManager|CameraDevice|CameraCaptureSession|CaptureRequest|OutputConfiguration|CameraService|CameraProvider|android.hardware.Camera|openCamera|getCameraIdList|getCameraCharacteristics|createCaptureSession|createCaptureRequest|setRepeatingRequest|addTarget|removeTarget|SurfaceJson|SurfaceTexture|ImageReader|RendererSandbox'
   TARGET_EVENT_RE='package=(com.android.camera|com.android.chrome|org.telegram.messenger|org.telegram.messenger.web)|"package":"(com.android.camera|com.android.chrome|org.telegram.messenger|org.telegram.messenger.web)"'
@@ -175,6 +226,7 @@ collect_lite_debug_bundle() {
   dumpsys media.camera > "$TMP/camera/dumpsys_media_camera.txt" 2>&1
   service list | grep -i camera > "$TMP/camera/service_list_camera.txt" 2>&1
   cmd media.camera get-camera-ids > "$TMP/camera/cmd_media_camera_ids.txt" 2>&1
+  collect_system_camera_probe "$TMP/system_camera_probe" >/dev/null 2>&1
 
   cmd package path "$APP_PKG" > "$TMP/packages/${APP_PKG}_path.txt" 2>&1
   dumpsys package "$APP_PKG" | grep -Ei 'Package \[|versionName|versionCode|codePath|resourcePath|legacy|xposed|requested permissions|granted=true' > "$TMP/packages/${APP_PKG}_summary.txt" 2>&1
@@ -322,6 +374,9 @@ case "$1" in
     echo "$(date '+%F %T') replacement stop requested" >> "$LOGS/hook.log"
     echo "replacement stopped"
     ;;
+  system-probe)
+    collect_system_camera_probe "/sdcard/Download/icecam_system_camera_probe_${VERSION}_$(date '+%Y%m%d_%H%M%S')"
+    ;;
   logs|debug-bundle|lite-logs)
     collect_lite_debug_bundle
     ;;
@@ -336,7 +391,7 @@ case "$1" in
     echo 0 > "$STATE/prepared"
     cat > "$CONFIG/app_config.json" <<JSON
 {
-  "version":"v9.4.6-provider-cache-cleanup",
+  "version":"v9.5.0-system-camera-probe",
   "active":false,
   "mode":"log-only",
   "cameraMode":"auto",
@@ -344,7 +399,7 @@ case "$1" in
   "mediaType":"none",
   "mediaPath":"/data/adb/icecam/media/source",
   "mediaMetaPath":"/data/adb/icecam/media/source.meta.json",
-  "pipelineStage":"provider-cache-renderer-sandbox-passive"
+  "pipelineStage":"system-camera-provider-probe-passive"
 }
 JSON
     chmod 777 "$ICE" "$LOGS" "$CONFIG" "$STATE" "$MEDIA" "$CACHE" 2>/dev/null
@@ -364,7 +419,7 @@ JSON
     echo "logs cleared"
     ;;
   *)
-    echo "usage: icecamctl bootstrap-app|bootstrap-app-foreground|status|prepare-hooks|start|stop|logs|lite-logs|full-logs|clear-logs|reset-dev-data|clean-all"
+    echo "usage: icecamctl bootstrap-app|bootstrap-app-foreground|status|prepare-hooks|start|stop|system-probe|logs|lite-logs|full-logs|clear-logs|reset-dev-data|clean-all"
     exit 2
     ;;
 esac

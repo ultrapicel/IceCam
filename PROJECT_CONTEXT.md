@@ -1,17 +1,21 @@
 # IceCam Project Context
 
-Current version: v9.4.6.
+Current version: v9.5.0-system-camera-probe.
 
-Goal: Android app + root module + LSPosed hook layer for broad camera-stack telemetry and future system camera stream replacement on Android 12–15.
+Main direction: system-level camera replacement. LSPosed hooks are telemetry/fallback; the preferred future route is camera-provider/HAL/V4L2 feasibility.
 
-Current implementation is passive. It does not inject frames yet.
+v9.5.0 does not inject frames. It adds root diagnostics to determine which low-level route is viable on the test device and across Android 12-15:
 
-v9.4.6 adds root startup/bootstrap reliability and cleanup:
+- external camera provider route;
+- V4L2/UVC/v4l2loopback route;
+- AIDL/HIDL camera provider route;
+- vendor camera provider replacement feasibility;
+- SELinux/VINTF blockers.
 
-- app startup runs `icecamctl bootstrap-app` through `su`;
-- root module cleans stale v9.x debug/cache/temp files on install/prepare/start;
-- app permission/appops bootstrap is attempted from root;
-- root markers are persisted in `/data/adb/icecam/state/root_granted*`;
-- renderer sandbox diagnostics from v9.4.1 remain enabled.
+Do not regress the working pieces from v9.4.6:
 
-Next stage after verifying logs: v9.5 experimental Surface injection. Do not proceed until renderer logcat events, root bootstrap markers, target LOAD/openCamera/createCaptureSession, and clean debug bundle counters are confirmed.
+- app starts without storage permission crash;
+- provider bridge works;
+- renderer sandbox logs;
+- Camera1/Camera2 hooks remain diagnostic;
+- no direct `/data/adb` I/O from target apps.

@@ -1,39 +1,48 @@
-# IceCam v9.4.6 — Root Bootstrap Cleanup + Renderer Diagnostics
+# IceCam v9.5.0 — System Camera Probe
 
-`v9.4.6-provider-cache-cleanup` is still passive telemetry only. It does not inject frames and does not replace a camera stream yet.
+`v9.5.0-system-camera-probe` pivots IceCam toward a system-level camera-provider/HAL route. It is still passive diagnostics only: no fake frames, no Surface replacement, no provider replacement yet.
 
-## Added in v9.4.6
+## Goal
 
-- Root bootstrap from app startup via `icecamctl bootstrap-app`.
-- Root-side permission/appops grant attempt for `com.icecam.dev`.
-- Install/start/prepare cleanup for stale v9.x temp/cache/debug artefacts.
-- Persistent root bootstrap markers: `/data/adb/icecam/state/root_granted` and `root_granted_at`.
-- v9.4.1 renderer diagnostics remain active: renderer thread, placeholder producer, owned SurfaceTexture telemetry.
+Stop relying on per-app behavior as the primary architecture. LSPosed remains useful for telemetry and fallback, but the main target is a system-camera path that can affect most apps through Android's normal camera stack.
 
-## Still disabled
+## Added in v9.5.0
 
-- fake frame injection
-- Surface replacement
-- virtual camera provider
-- CameraDevice proxy replacement
+- Root-side `system-probe` command.
+- Debug bundle now includes `system_camera_probe/`.
+- Camera provider/HAL inventory:
+  - `dumpsys media.camera`
+  - `service list`
+  - `lshal` camera entries
+  - `/vendor/bin/hw/*camera*`
+  - `/vendor/lib*/hw/*camera*`
+  - VINTF manifest camera references
+  - external camera config discovery
+  - `/dev/video*`, `/dev/media*`, `/sys/class/video4linux`
+  - kernel config probe for V4L2/UVC/v4l2loopback
+  - SELinux camera/provider contexts and AVC denials
+- UI button: Root → System Camera Probe.
 
-## Expected GitHub Actions artifacts
+## Architectural direction
 
-- `IceCam-app-v9.4.6.apk`
-- `IceCam-root-module-v9.4.6.zip`
-- `IceCam-source-snapshot-v9.4.6.zip`
+Priority order:
+
+1. External camera/provider emulation if device exposes a usable provider path.
+2. V4L2/UVC-compatible route if kernel/vendor supports it.
+3. Vendor/AIDL camera provider feasibility on Android 14+.
+4. LSPosed Camera2/Camera1 Surface/CaptureSession interception as fallback, not final design.
+
+## GitHub Actions artifacts
+
+- `IceCam-app-v9.5.0.apk`
+- `IceCam-root-module-v9.5.0.zip`
+- `IceCam-source-snapshot-v9.5.0.zip`
 
 ## Test flow
 
-1. Install/update root module.
-2. Install APK.
-3. Open IceCam once; root should be requested at startup.
-4. Press `Prepare Hook Layer`.
-5. Select media.
-6. Press `Start Replacement`.
-7. Open Camera/Telegram/Chrome camera for 5–10 seconds.
-8. Export Lite Debug Bundle.
-
-Lite bundle path:
-
-`/sdcard/Download/icecam_debug_v9.4.6_<timestamp>.tar.gz`
+1. Install APK and root module.
+2. Reboot after LSPosed/module update.
+3. Open IceCam.
+4. Root → System Camera Probe, or Dashboard → normal diagnostic flow.
+5. Export Lite Debug Bundle.
+6. Send `icecam_debug_v9.5.0_<timestamp>.tar.gz`.

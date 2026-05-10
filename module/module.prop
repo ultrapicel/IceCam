@@ -1,6 +1,6 @@
 id=icecam
-name=IceCam v9.4.6 Provider Cache Cleanup
-version=v9.4.6-provider-cache-cleanup
+name=IceCam v9.5.0 System Camera Probe
+version=v9.5.0-system-camera-probe
 versionCode=945
 author=IceCam
 summary=IceCam root control layer, LSPosed camera telemetry, provider bridge, passive renderer sandbox, safe storage bootstrap, and debug bundles for Android 12-15
