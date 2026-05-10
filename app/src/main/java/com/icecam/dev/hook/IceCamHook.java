@@ -38,7 +38,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
     private static final String SESSION_EVENTS = CACHE_DIR + "/capture_session_events.jsonl";
     private static final String SURFACE_EVENTS = CACHE_DIR + "/surface_events.jsonl";
     private static final String SURFACE_OWNERSHIP_EVENTS = CACHE_DIR + "/surface_ownership_events.jsonl";
-    private static final String VERSION = "v9.6.2-continuous-surface-renderer";
+    private static final String VERSION = "v9.6.3-safe-surface-classifier";
     private static final String PROVIDER_CONFIG_URI = "content://com.icecam.dev.provider/config";
     private static final String PROVIDER_STATE_URI = "content://com.icecam.dev.provider/state";
     private static final String PROVIDER_MEDIA_URI = "content://com.icecam.dev.provider/media-meta";
@@ -310,6 +310,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
             hookAll(imageReader, "getSurface", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam p) {
                     surfaceEvent(lp, "ImageReader.getSurface.after", p);
+                    markImageReaderSurface(lp, p == null ? null : p.getResult(), "ImageReader.getSurface.after");
                 }
             });
             hookAll(imageReader, "close", new XC_MethodHook() {
@@ -543,21 +544,64 @@ public class IceCamHook implements IXposedHookLoadPackage {
     }
 
     private static final java.util.Set<Integer> PAINTED_SURFACES = java.util.Collections.synchronizedSet(new java.util.HashSet<Integer>());
+    private static final java.util.Set<Integer> IMAGE_READER_SURFACES = java.util.Collections.synchronizedSet(new java.util.HashSet<Integer>());
     private static void maybeStartSurfaceShadow(final XC_LoadPackage.LoadPackageParam lp, Object surfaceObj, final String source) {
         if (!surfaceShadowEnabled()) return;
         if (!(surfaceObj instanceof Surface)) return;
         final Surface s = (Surface) surfaceObj;
         final int id = System.identityHashCode(s);
+        SurfaceDecision decision = classifySurfaceTarget(lp, s, source, id);
+        logSurfaceClassifier(lp, s, source, id, decision);
+        if (!decision.render) return;
         if (!PAINTED_SURFACES.add(id)) return;
         String json = "{\"version\":\"" + VERSION + "\",\"package\":\"" + esc(lp.packageName)
                 + "\",\"process\":\"" + esc(lp.processName) + "\",\"action\":\"candidate\",\"source\":\"" + esc(source)
-                + "\",\"surface\":\"" + esc(objectDetail(s)) + "\",\"mode\":\"" + esc(mode()) + "\"}";
+                + "\",\"surface\":\"" + esc(objectDetail(s)) + "\",\"classification\":\"" + esc(decision.kind)
+                + "\",\"reason\":\"" + esc(decision.reason) + "\",\"mode\":\"" + esc(mode()) + "\"}";
         try { Log.i(TAG, "Camera2SurfaceShadowJson " + json); } catch (Throwable ignored) {}
         xlog("IceCam/Hook Camera2SurfaceShadowJson " + json);
-        // v9.6.2 starts a bounded continuous renderer. It is still experimental and non-destructive:
-        // if lockCanvas() fails or the Surface becomes invalid, the loop stops and the app falls back
-        // to the normal camera pipeline.
+        // v9.6.3: classified bounded render. Only render into allowlisted preview-like surfaces.
         startContinuousSurfaceRenderer(lp, s, source, id);
+    }
+
+    private static class SurfaceDecision {
+        final boolean render;
+        final String kind;
+        final String reason;
+        SurfaceDecision(boolean render, String kind, String reason) {
+            this.render = render; this.kind = kind; this.reason = reason;
+        }
+    }
+
+    private static SurfaceDecision classifySurfaceTarget(XC_LoadPackage.LoadPackageParam lp, Surface s, String source, int id) {
+        String pkg = lp == null ? "" : String.valueOf(lp.packageName);
+        String proc = lp == null ? "" : String.valueOf(lp.processName);
+        String src = source == null ? "" : source;
+        if (!surfaceShadowEnabled()) return new SurfaceDecision(false, "disabled", "surface-shadow-disabled");
+        if (IMAGE_READER_SURFACES.contains(id)) return new SurfaceDecision(false, "image-reader", "skip-image-reader-surface");
+        if (pkg.contains("chrome") || proc.contains("chrome")) return new SurfaceDecision(false, "webrtc-or-browser", "chrome-webview-log-only");
+        if (proc.contains(":web") || proc.endsWith(".web") || proc.contains("web")) return new SurfaceDecision(false, "web-process", "web-process-log-only");
+        if (!src.contains("CaptureRequest.Builder.addTarget")) return new SurfaceDecision(false, "non-request-target", "only-render-addTarget-surfaces");
+        // Current safe allowlist: keep first visible result constrained to the system camera app.
+        // Telegram/Chrome stay trace-only until their surface roles are separated from ImageReader/WebRTC paths.
+        if ("com.android.camera".equals(pkg)) return new SurfaceDecision(true, "preview-candidate", "system-camera-allowlist");
+        return new SurfaceDecision(false, "trace-only", "package-not-allowlisted-yet");
+    }
+
+    private static void markImageReaderSurface(XC_LoadPackage.LoadPackageParam lp, Object obj, String source) {
+        if (!(obj instanceof Surface)) return;
+        int id = System.identityHashCode(obj);
+        IMAGE_READER_SURFACES.add(id);
+        logSurfaceClassifier(lp, (Surface)obj, source, id, new SurfaceDecision(false, "image-reader", "registered-image-reader-surface"));
+    }
+
+    private static void logSurfaceClassifier(XC_LoadPackage.LoadPackageParam lp, Surface s, String source, int id, SurfaceDecision d) {
+        String json = "{\"version\":\"" + VERSION + "\",\"package\":\"" + esc(lp == null ? "" : lp.packageName)
+                + "\",\"process\":\"" + esc(lp == null ? "" : lp.processName) + "\",\"action\":\"classify\",\"source\":\"" + esc(source)
+                + "\",\"surfaceId\":" + id + ",\"surface\":\"" + esc(objectDetail(s)) + "\",\"render\":" + d.render
+                + ",\"kind\":\"" + esc(d.kind) + "\",\"reason\":\"" + esc(d.reason) + "\",\"mode\":\"" + esc(mode()) + "\"}";
+        try { Log.i(TAG, "SurfaceClassifierJson " + json); } catch (Throwable ignored) {}
+        xlog("IceCam/Hook SurfaceClassifierJson " + json);
     }
 
     private static final java.util.Map<Integer, SurfaceRenderLoop> SURFACE_RENDERERS = new java.util.concurrent.ConcurrentHashMap<Integer, SurfaceRenderLoop>();
@@ -612,8 +656,8 @@ public class IceCamHook implements IXposedHookLoadPackage {
 
         public void run() {
             // Bounded first experiment: enough time to observe visibility, not enough to hang a target app forever.
-            final long maxMs = 45000L;
-            final int frameDelayMs = 66; // ~15 FPS, safer than 30 FPS for lockCanvas probes.
+            final long maxMs = 12000L;
+            final int frameDelayMs = 100; // ~10 FPS: safer while classifier is being tuned.
             while (running.get() && surfaceShadowEnabled() && (System.currentTimeMillis() - startedAt) < maxMs) {
                 Canvas c = null;
                 try {
@@ -628,7 +672,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
                 } catch (Throwable t) {
                     errors++;
                     logSurfaceRender("surface_render_error", shortErr(t));
-                    if (errors >= 3) break;
+                    if (errors >= 1) break;
                 } finally {
                     try { if (c != null) surface.unlockCanvasAndPost(c); } catch (Throwable t) { errors++; logSurfaceRender("surface_render_error", "unlock=" + shortErr(t)); }
                 }
@@ -670,7 +714,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
         p.setStyle(Paint.Style.FILL);
         p.setTextSize(Math.max(28f, w / 24f));
         p.setColor(Color.WHITE);
-        c.drawText("IceCam v9.6.2", 48, Math.min(h - 80, 110), p);
+        c.drawText("IceCam v9.6.3", 48, Math.min(h - 80, 110), p);
         p.setTextSize(Math.max(20f, w / 42f));
         c.drawText("continuous Surface renderer · frame " + frame, 48, Math.min(h - 40, 160), p);
     }
@@ -689,7 +733,7 @@ public class IceCamHook implements IXposedHookLoadPackage {
                 c.drawRect(20, 20, Math.max(60, c.getWidth()-20), Math.max(60, c.getHeight()-20), p);
                 p.setTextSize(Math.max(28f, c.getWidth() / 24f));
                 p.setColor(Color.WHITE);
-                c.drawText("IceCam v9.6.2", 48, Math.min(c.getHeight()-60, 110), p);
+                c.drawText("IceCam v9.6.3", 48, Math.min(c.getHeight()-60, 110), p);
                 p.setTextSize(Math.max(20f, c.getWidth() / 40f));
                 c.drawText("Camera2 surface single paint fallback", 48, Math.min(c.getHeight()-30, 160), p);
                 result = "paint-ok:" + c.getWidth() + "x" + c.getHeight();

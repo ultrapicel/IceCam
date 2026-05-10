@@ -1,10 +1,10 @@
 # IceCam Project Context
 
-Current version: v9.6.2-continuous-surface-renderer.
+Current version: v9.6.3-safe-surface-classifier.
 
 Main direction: system-level camera replacement. LSPosed hooks are telemetry/fallback; the preferred future route is camera-provider/HAL/V4L2 feasibility.
 
-v9.6.2 starts a bounded Camera2 Surface renderer test after target Surface discovery on the test device and across Android 12-15:
+v9.6.3 starts a bounded Camera2 Surface renderer test after target Surface discovery on the test device and across Android 12-15:
 
 - external camera provider route;
 - V4L2/UVC/v4l2loopback route;

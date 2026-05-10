@@ -8,8 +8,8 @@ android {
         applicationId 'com.icecam.dev'
         minSdk 31
         targetSdk 35
-        versionCode 962
-        versionName '9.6.2-continuous-surface-renderer'
+        versionCode 963
+        versionName '9.6.3-safe-surface-classifier'
     }
 }
 
