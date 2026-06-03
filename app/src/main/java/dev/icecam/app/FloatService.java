@@ -22,6 +22,9 @@ import android.widget.Toast;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class FloatService extends Service {
+    private static final long QUIET_TRANSFORM_MS = 900L;
+    private static final long POST_REPLAY_COOLDOWN_MS = 420L;
+
     private WindowManager wm;
     private View panel;
     private WindowManager.LayoutParams lp;
@@ -32,7 +35,12 @@ public class FloatService extends Service {
     private TextView state;
     private int lastX, lastY;
     private float touchX, touchY;
+
+    private final Object backendLock = new Object();
     private final AtomicBoolean busy = new AtomicBoolean(false);
+    private final AtomicBoolean transformWorker = new AtomicBoolean(false);
+    private volatile boolean transformPending = false;
+    private volatile String pendingReason = "float";
 
     @Override public IBinder onBind(Intent i){ return null; }
 
@@ -68,7 +76,7 @@ public class FloatService extends Service {
         if (panel != null) return;
         wm = (WindowManager)getSystemService(WINDOW_SERVICE);
         int type = Build.VERSION.SDK_INT >= 26 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
-        lp = new WindowManager.LayoutParams(dp(230), WindowManager.LayoutParams.WRAP_CONTENT, type,
+        lp = new WindowManager.LayoutParams(dp(292), WindowManager.LayoutParams.WRAP_CONTENT, type,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.START;
@@ -77,35 +85,59 @@ public class FloatService extends Service {
         panel = buildPanel();
         wm.addView(panel, lp);
         refresh();
-        log.log("float", "v16 floating switch started");
+        log.log("float", "v17 full floating controls started");
     }
 
     private View buildPanel() {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(12), dp(10), dp(12), dp(12));
-        box.setBackground(bg(0xee161d29, dp(26), 0x66ffffff));
+        box.setBackground(bg(0xee151b28, dp(26), 0x66ffffff));
         box.setOnTouchListener((v, e) -> drag(e));
 
-        TextView title = tv("IceCam", 15, true);
+        TextView title = tv("IceCam Controls", 15, true);
         title.setGravity(Gravity.CENTER);
         title.setOnTouchListener((v, e) -> drag(e));
-        box.addView(title, new LinearLayout.LayoutParams(-1, dp(32)));
+        box.addView(title, new LinearLayout.LayoutParams(-1, dp(30)));
 
         state = tv("", 10, false);
         state.setGravity(Gravity.CENTER);
         state.setTextColor(0xffdbe7f4);
         box.addView(state);
 
+        LinearLayout r0 = row();
+        r0.addView(btn("Start", v -> playFile()), weight());
+        r0.addView(btn("Restore", v -> restoreCamera()), weight());
+        box.addView(r0);
+
         LinearLayout r1 = row();
-        r1.addView(btn("Start", v -> playFile()), weight());
-        r1.addView(btn("Restore", v -> restoreCamera()), weight());
+        r1.addView(btn("Zoom +", v -> mutate("zoom+")), weight());
+        r1.addView(btn("Up", v -> mutate("up")), weight());
+        r1.addView(btn("Zoom -", v -> mutate("zoom-")), weight());
         box.addView(r1);
 
         LinearLayout r2 = row();
-        r2.addView(btn("Status", v -> { root.status(); refresh(); }), weight());
-        r2.addView(btn("Close", v -> stopSelf()), weight());
+        r2.addView(btn("Left", v -> mutate("left")), weight());
+        r2.addView(btn("Center", v -> mutate("center")), weight());
+        r2.addView(btn("Right", v -> mutate("right")), weight());
         box.addView(r2);
+
+        LinearLayout r3 = row();
+        r3.addView(btn("Fit/Fill", v -> mutate("fit-fill")), weight());
+        r3.addView(btn("Down", v -> mutate("down")), weight());
+        r3.addView(btn("Crop", v -> mutate("crop")), weight());
+        box.addView(r3);
+
+        LinearLayout r4 = row();
+        r4.addView(btn("Rotate", v -> mutate("rotate")), weight());
+        r4.addView(btn("Mirror", v -> mutate("mirror")), weight());
+        r4.addView(btn("Apply", v -> forceApply()), weight());
+        box.addView(r4);
+
+        LinearLayout r5 = row();
+        r5.addView(btn("Open app", v -> openApp()), weight());
+        r5.addView(btn("Close", v -> stopSelf()), weight());
+        box.addView(r5);
         return box;
     }
 
@@ -124,6 +156,69 @@ public class FloatService extends Service {
         return false;
     }
 
+    private void mutate(String op) {
+        TransformState s = TransformState.load(prefs);
+        switch (op) {
+            case "zoom+": s.zoom(1.12f); break;
+            case "zoom-": s.zoom(1f / 1.12f); break;
+            case "up": s.move(0f, 0.04f); break;
+            case "down": s.move(0f, -0.04f); break;
+            case "left": s.move(-0.04f, 0f); break;
+            case "right": s.move(0.04f, 0f); break;
+            case "center": s.center(); break;
+            case "fit-fill": s.toggleFitFill(); break;
+            case "crop": s.cycleCrop(); break;
+            case "rotate": s.rotate90(); break;
+            case "mirror": s.toggleMirrorH(); break;
+        }
+        s.save(prefs);
+        log.log("float", "transform state " + op + " " + s.summary());
+        scheduleBake(op);
+        refresh();
+    }
+
+    private void forceApply() {
+        transformPending = false;
+        scheduleBake("manual-apply");
+    }
+
+    private void scheduleBake(String reason) {
+        pendingReason = reason;
+        transformPending = true;
+        if (!transformWorker.compareAndSet(false, true)) {
+            log.log("float", "coalesced latest transform: " + reason);
+            return;
+        }
+        new Thread(() -> {
+            try {
+                while (true) {
+                    transformPending = false;
+                    String r = pendingReason;
+                    prefs.edit().putString("IceCamState", "FLOAT_WAITING_FOR_STABLE_TRANSFORM").apply();
+                    sleepMs(QUIET_TRANSFORM_MS);
+                    if (transformPending) continue;
+                    TransformState snapshot = TransformState.load(prefs);
+                    String original = prefs.getString("OriginalPlayFileMp4", prefs.getString("PlayFileMp4", ""));
+                    if (original == null || original.length() == 0) break;
+                    if (!MediaTransformer.isImagePath(original)) {
+                        log.log("float", r + " saved for video; no baked replay");
+                        break;
+                    }
+                    prefs.edit().putString("IceCamState", "FLOAT_RENDERING_FRAME").apply();
+                    String baked = MediaTransformer.bakeImage(this, original, snapshot, log);
+                    prefs.edit().putString("PlayFileMp4", baked).putString("BakedPlayFileMp4", baked).apply();
+                    if (prefs.getBoolean("ReplacementActive", false)) replay(baked, "float-transform-" + r);
+                    sleepMs(POST_REPLAY_COOLDOWN_MS);
+                    if (!transformPending) break;
+                }
+            } finally {
+                transformWorker.set(false);
+                if (transformPending) scheduleBake("float-coalesced-after-worker");
+                refresh();
+            }
+        }, "icecam-float-transform").start();
+    }
+
     private void playFile() {
         String p = prefs.getString("PlayFileMp4", "");
         if (p == null || p.trim().isEmpty()) { toast("Select media in main app first"); return; }
@@ -136,41 +231,57 @@ public class FloatService extends Service {
                     root.bootstrap();
                     binder.clearCache();
                     binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
-                    sleepMs(250);
+                    sleepMs(350);
                 }
-                log.log("float", "start replacement path=" + p);
-                int mode = binder.setModeString(1, p);
-                sleepMs(240);
-                TransformState tx = TransformState.load(prefs);
-                int play = binder.playSource(p, tx.mirrorH(), prefs.getBoolean("PlayisLoop", true));
-                boolean active = mode >= 0 && play >= 0;
-                prefs.edit().putBoolean("ReplacementActive", active).putString("IceCamState", active ? "REPLACEMENT_ACTIVE" : "PLAY_ERROR").apply();
-                log.log("float", "start done TX14=" + mode + " TX11=" + play + " active=" + active);
+                replay(p, "float-start");
             } finally { busy.set(false); refresh(); }
         }, "icecam-float-start").start();
+    }
+
+    private void replay(String p, String source) {
+        synchronized (backendLock) {
+            log.log("float", "replay start source=" + source + " path=" + p);
+            int mode = binder.setModeString(1, p);
+            sleepMs(420);
+            TransformState tx = TransformState.load(prefs);
+            int play = binder.playSource(p, tx.mirrorH(), prefs.getBoolean("PlayisLoop", true));
+            boolean active = mode >= 0 && play >= 0;
+            prefs.edit().putBoolean("ReplacementActive", active).putString("IceCamState", active ? "REPLACEMENT_ACTIVE" : "PLAY_ERROR").apply();
+            log.log("float", "replay done TX14=" + mode + " TX11=" + play + " active=" + active);
+            if (!active && play == -998) binder.clearCache();
+        }
     }
 
     private void restoreCamera() {
         if (!busy.compareAndSet(false, true)) return;
         new Thread(() -> {
-            try {
-                prefs.edit().putString("IceCamState", "RESTORING_CAMERA").apply();
-                log.log("float", "restore camera requested");
-                root.restoreCamera();
-                binder.clearCache();
-                sleepMs(250);
-                boolean stillConnected = binder.connected();
-                prefs.edit().putBoolean("ReplacementActive", false).putString("IceCamState", stillConnected ? "RESTORE_CHECK_SERVICE_STILL_VISIBLE" : "CAMERA_RESTORED").apply();
-                log.log("float", "restore done serviceStillVisible=" + stillConnected);
-            } finally { busy.set(false); refresh(); }
+            synchronized (backendLock) {
+                try {
+                    prefs.edit().putString("IceCamState", "RESTORING_CAMERA").apply();
+                    log.log("float", "restore camera requested");
+                    root.restoreCamera();
+                    binder.clearCache();
+                    sleepMs(350);
+                    boolean stillConnected = binder.connected();
+                    prefs.edit().putBoolean("ReplacementActive", false).putString("IceCamState", stillConnected ? "RESTORE_CHECK_SERVICE_STILL_VISIBLE" : "CAMERA_RESTORED").apply();
+                    log.log("float", "restore done serviceStillVisible=" + stillConnected);
+                } finally { busy.set(false); refresh(); }
+            }
         }, "icecam-float-restore").start();
+    }
+
+    private void openApp() {
+        Intent it = new Intent(this, MainActivity.class);
+        it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+        startActivity(it);
     }
 
     private void refresh() {
         if (state == null) return;
         boolean active = prefs.getBoolean("ReplacementActive", false);
         String phase = prefs.getString("IceCamState", "IDLE");
-        state.setText((active ? "ON" : "OFF") + " · " + phase);
+        TransformState s = TransformState.load(prefs);
+        state.setText((active ? "ON" : "OFF") + " · " + phase + "\n" + s.modeName() + " z=" + String.format(java.util.Locale.US, "%.2f", s.zoomX) + " pan=" + String.format(java.util.Locale.US, "%.2f,%.2f", s.panX, s.panY));
         state.setTextColor(active ? 0xff62ff91 : 0xffdbe7f4);
     }
 
@@ -178,11 +289,11 @@ public class FloatService extends Service {
     private Button btn(String s, View.OnClickListener l) {
         Button b = new Button(this);
         b.setText(s); b.setAllCaps(false); b.setTextSize(10); b.setTextColor(Color.WHITE); b.setTypeface(Typeface.DEFAULT_BOLD);
-        b.setPadding(0, 0, 0, 0); b.setMinHeight(0); b.setMinimumHeight(0); b.setBackground(bg(0xaa6d7c92, dp(16), 0x66ffffff)); b.setOnClickListener(l); return b;
+        b.setPadding(0, 0, 0, 0); b.setMinHeight(0); b.setMinimumHeight(0); b.setBackground(bg(0xaa6d7c92, dp(15), 0x66ffffff)); b.setOnClickListener(l); return b;
     }
     private TextView tv(String s, int sp, boolean bold) { TextView t = new TextView(this); t.setText(s); t.setTextSize(sp); t.setTextColor(Color.WHITE); if (bold) t.setTypeface(Typeface.DEFAULT_BOLD); return t; }
     private LinearLayout row() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); l.setGravity(Gravity.CENTER); return l; }
-    private LinearLayout.LayoutParams weight() { LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1); lp.setMargins(dp(3), dp(3), dp(3), dp(3)); return lp; }
+    private LinearLayout.LayoutParams weight() { LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(36), 1); lp.setMargins(dp(3), dp(3), dp(3), dp(3)); return lp; }
     private GradientDrawable bg(int color, int radius, int stroke) { GradientDrawable g = new GradientDrawable(); g.setColor(color); g.setCornerRadius(radius); g.setStroke(1, stroke); return g; }
     private int dp(int v) { return (int)(v * getResources().getDisplayMetrics().density + .5f); }
     private void toast(String s) { Toast.makeText(this, s, Toast.LENGTH_SHORT).show(); log.log("float", s); }

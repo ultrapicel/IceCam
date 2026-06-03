@@ -1,3 +1,17 @@
+# IceCam Core v17
+
+GitHub-ready Android project.
+
+Main changes in this build:
+
+- M1–M4 media slots.
+- Coalesced transform apply to prevent backend overload.
+- Full floating controls.
+- Cleaner high-quality image transform replay.
+- Serialized backend operations.
+
+Build with GitHub Actions: **Android APK build**.
+
 # IceCam Core v15
 
 Clean IceCam rebuild using the best recovered parts of the original APK without keeping the old UI flow.
