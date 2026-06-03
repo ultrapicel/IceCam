@@ -81,7 +81,7 @@ public class FloatService extends Service {
         panel = collapsed ? buildBubble() : buildPanel();
         wm.addView(panel, lp);
         refresh();
-        log.log("float", "v12 floating controls started collapsed=" + collapsed);
+        log.log("float", "v15 IceCam Core floating controls started collapsed=" + collapsed);
     }
 
     private View buildBubble() {
@@ -101,7 +101,7 @@ public class FloatService extends Service {
         box.setBackground(bg(0xee161d29, dp(26), 0x66ffffff));
 
         LinearLayout head = row();
-        TextView title = tv("IceCam Controls", 15, true);
+        TextView title = tv("IceCam Core", 15, true);
         title.setOnTouchListener((v, e) -> drag(e));
         head.addView(title, new LinearLayout.LayoutParams(0, dp(34), 1));
         head.addView(btn("—", v -> { collapsed = true; prefs.edit().putBoolean("FloatCollapsed", true).apply(); redraw(); }), new LinearLayout.LayoutParams(dp(42), dp(34)));
@@ -136,7 +136,7 @@ public class FloatService extends Service {
         LinearLayout r4 = row();
         r4.addView(btn("Rotate", v -> { tx.rotate90(); apply("rotate90"); }), weight());
         r4.addView(btn("Mirror", v -> { tx.toggleMirrorH(); apply("mirrorH"); }), weight());
-        r4.addView(btn("SoftStop", v -> stopNative()), weight());
+        r4.addView(btn("Restore", v -> stopNative()), weight());
         r4.addView(btn("Close", v -> stopSelf()), weight());
         box.addView(r4);
         return box;
@@ -179,16 +179,27 @@ public class FloatService extends Service {
             int tr = -1000;
             if (prefs.getBoolean("EnableTx24Color", false)) tr = binder.setTransform(tx);
             else log.log("tx24", "float auto TX24 skipped; EnableTx24Color=false " + tx.summary());
-            log.log("float", "legacy play done TX14=" + mode + " TX11=" + play + " TX24=" + tr + " path=" + p);
+            boolean active = mode >= 0 && play >= 0;
+            prefs.edit().putBoolean("ReplacementActive", active).putString("IceCamState", active ? "REPLACEMENT_ACTIVE" : "PLAY_ERROR").apply();
+            log.log("float", "legacy play done TX14=" + mode + " TX11=" + play + " TX24=" + tr + " active=" + active + " path=" + p);
             refresh();
         }, "icecam-float-play").start();
     }
 
     private void stopNative() {
-        // TX25 is destructive on this native build and can cause black camera clients.
-        int r = binder.simple(VliveBinderClient.TX_GET_INT);
-        log.log("float", "soft stop: TX25 disabled, TX15/status=" + r);
-        refresh();
+        new Thread(() -> {
+            prefs.edit().putString("IceCamState", "RESTORING_CAMERA").apply();
+            log.log("float", "restore camera requested from floating panel");
+            root.restoreCamera();
+            binder.clearCache();
+            boolean stillConnected = binder.connected();
+            prefs.edit()
+                    .putBoolean("ReplacementActive", false)
+                    .putString("IceCamState", stillConnected ? "RESTORE_CHECK_SERVICE_STILL_VISIBLE" : "CAMERA_RESTORED")
+                    .apply();
+            log.log("float", "restore camera done serviceStillVisible=" + stillConnected + " " + binder.lastError());
+            refresh();
+        }, "icecam-float-restore").start();
     }
 
     private void apply(String reason) {
@@ -225,7 +236,10 @@ public class FloatService extends Service {
         if (state == null) return;
         String media = prefs.getString("PlayFileMp4", "");
         if (media == null || media.length() == 0) media = "<not selected>";
-        state.setText(tx.summary() + "\nmedia=" + shortPath(media) + "\nservice=" + binder.preferredService() + "\n" + binder.lastError());
+        String phase = prefs.getString("IceCamState", "IDLE");
+        boolean active = prefs.getBoolean("ReplacementActive", false);
+        state.setText("state=" + phase + " active=" + active + "\n" + tx.summary() + "\nmedia=" + shortPath(media) + "\nservice=" + binder.preferredService() + "\n" + binder.lastError());
+        state.setTextColor(active ? 0xff62ff91 : 0xffdbe7f4);
     }
 
     private String shortPath(String p) { return p.length() > 46 ? "…" + p.substring(p.length() - 46) : p; }

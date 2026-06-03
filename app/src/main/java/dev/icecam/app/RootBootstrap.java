@@ -71,6 +71,32 @@ public final class RootBootstrap {
         return all;
     }
 
+    public String restoreCamera() {
+        String server = serverName();
+        String script = "set -x\n" +
+                "SERVER=" + Shell.q(server) + "\n" +
+                "echo restore_server=$SERVER\n" +
+                "id\n" +
+                "getenforce 2>/dev/null || true\n" +
+                "echo ---soft-stop-binder---\n" +
+                "service check $SERVER 2>&1 || true\n" +
+                "echo ---kill-daemon---\n" +
+                "killall vcplax 2>/dev/null || true\n" +
+                "pkill -f /data/vcplax 2>/dev/null || true\n" +
+                "pkill -f /data/camera/vcplax 2>/dev/null || true\n" +
+                "sleep 1\n" +
+                "echo ---after-process---\n" +
+                "ps -A | grep -i vcplax || ps | grep -i vcplax || true\n" +
+                "echo ---after-service---\n" +
+                "service check $SERVER 2>&1 || true\n" +
+                "echo ---camera-services---\n" +
+                "service list 2>/dev/null | grep -iE \"camera|media.camera|$SERVER|vcplax\" || true\n" +
+                "echo restore_done\n";
+        Shell.Result r = Shell.su(script);
+        log.logBlock("restore", r.all());
+        return r.all();
+    }
+
     public String status() {
         String server = serverName();
         String script = "SERVER=" + Shell.q(server) + "\n" +

@@ -1,43 +1,24 @@
-# IceCam v10 Report-Refined Reconstruction
+# IceCam Core v15
 
-GitHub-ready Android project.
+Clean IceCam rebuild using the best recovered parts of the original APK without keeping the old UI flow.
 
-## Build
+## What is included
 
-Upload this repository to GitHub and run:
+- Stable app name: **IceCam**
+- Stable native service name: **privsam_service**
+- Legacy native backend deployment: `libvc.so`, `libshadowhook.so`, `vcplax.so`
+- Safe start / restore lifecycle
+- Media picker for photo/video
+- Floating controller
+- TransformState model: zoom, pan, crop, rotate, mirror, fit/fill
+- Photo transform engine: bakes a transformed 640x480 JPEG and replays it through the working native backend
+- TX24 isolated as color-correction/debug only
+- GitHub Actions Android APK build
 
-`Actions -> Android APK build`
+## Current backend behavior
 
-The workflow uploads the debug APK as an artifact.
+The recovered native backend reliably accepts local source playback through the legacy TX14 -> TX11 path. TX24 is not used for geometry because runtime tests showed it changes color/correction state.
 
-## What changed in v10
+## Next native stage
 
-- English-only single-page UI.
-- Native flow preserved from the working v8 build.
-- Floating menu remapped for practical media control:
-  - Zoom + / Zoom -
-  - pan arrows
-  - Center
-  - Crop
-  - Fit/Fill
-  - Rotate 90
-  - Mirror
-  - Play / Stop
-- Report-refined diagnostics.
-- Strong TX24 logging.
-
-## Notes
-
-`TX24` in this project means Binder transaction code 24:
-
-`TX24(mode, panX, panY, zoomX, zoomY, flags)`
-
-It is not the same as RGB24/TX24 pixel-format conversion mentioned in some native reports.
-
-
-## v10 notes
-
-- App label: IceCam.
-- Fixed daemon/Binder service name: `privsam_service`.
-- Media switching uses safe sequence: TX25 reset -> TX22 range -> TX14 mode/source -> TX11 play -> TX24 transform.
-- Random ServerName generation removed to prevent stale Binder handles after media changes.
+Realtime video zoom/pan/crop requires a clean renderer stage before the native backend: decoder -> GLES transform -> encoder/local stream/source bridge. This project is structured for that, while keeping the currently working replacement backend intact.

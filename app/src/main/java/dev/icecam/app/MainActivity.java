@@ -56,7 +56,7 @@ public class MainActivity extends Activity {
         requestBasicPermissions();
         buildUi();
         logger.setListener(text -> runOnUiThread(() -> { if (logView != null) logView.setText(trimLog(text)); }));
-        logger.log("app", "IceCam v13 baked-transform build started");
+        logger.log("app", "IceCam v15 Core rebuild started");
         logger.log("app", "ServerName=" + root.serverName());
         runBg(() -> { root.bootstrap(); binder.setPreferredService(root.serverName()); refreshAll(); });
     }
@@ -87,7 +87,7 @@ public class MainActivity extends Activity {
     private void render() {
         body.removeAllViews();
         body.addView(title("IceCam"));
-        body.addView(text("v13 baked-transform layer. Fixed service name: privsam_service. Native binaries are untouched. TX24 is treated as color-correction/debug, not pan/zoom. Image pan/zoom/rotate/mirror are baked into selected local photos before replay.", 13, false, MUTED));
+        body.addView(text("v15 Core rebuild. New IceCam shell built around the best recovered parts: stable native backend, media picker, restore watchdog, floating controller, TransformState, baked photo transforms, and TX24 isolated as color-correction debug.", 13, false, MUTED));
 
         LinearLayout stateCard = card();
         stateCard.addView(section("Status"));
@@ -95,33 +95,34 @@ public class MainActivity extends Activity {
         status.setTextIsSelectable(true);
         stateCard.addView(status);
         LinearLayout sr = row();
-        sr.addView(primaryBtn("Root bootstrap", v -> runBg(() -> { saveServiceName(); root.bootstrap(); refreshAll(); })), weight());
+        sr.addView(primaryBtn("Start service", v -> startNativeService()), weight());
+        sr.addView(primaryBtn("Restore camera", v -> restoreCamera()), weight());
         sr.addView(primaryBtn("Full status", v -> runBg(() -> { root.status(); logger.logBlock("binder", binder.diagnostics()); refreshAll(); })), weight());
         stateCard.addView(sr);
         body.addView(stateCard);
 
         LinearLayout media = card();
-        media.addView(section("Local photo/video source"));
+        media.addView(section("Media source"));
         mediaLabel = text("", 12, false, TEXT);
         mediaLabel.setTextIsSelectable(true);
         media.addView(mediaLabel);
         LinearLayout mr = row();
         mr.addView(primaryBtn("Select media", v -> pickMedia()), weight());
         mr.addView(primaryBtn("Play selected", v -> playSelected()), weight());
-        mr.addView(primaryBtn("Soft stop", v -> stopNative()), weight());
-        mr.addView(primaryBtn("Restart daemon", v -> runBg(() -> { root.bootstrap(); binder.clearCache(); refreshAll(); })), weight());
+        mr.addView(primaryBtn("Restore camera", v -> restoreCamera()), weight());
+        mr.addView(primaryBtn("Restart service", v -> startNativeService()), weight());
         media.addView(mr);
         loop = check("Loop playback", prefs.getBoolean("PlayisLoop", true), (b, v) -> { prefs.edit().putBoolean("PlayisLoop", v).apply(); logger.log("ui", "loop=" + v); });
         media.addView(loop);
         body.addView(media);
 
         LinearLayout controls = card();
-        controls.addView(section("Image transform controls"));
+        controls.addView(section("Stream controls / transform layer"));
         transformLabel = text("", 12, false, TEXT);
         transformLabel.setTextIsSelectable(true);
         controls.addView(transformLabel);
         controls.addView(check("Enable TX24 color-correction debug", prefs.getBoolean("EnableTx24Color", false), (b, v) -> { prefs.edit().putBoolean("EnableTx24Color", v).apply(); logger.log("tx24", "EnableTx24Color=" + v); }));
-        controls.addView(text("TX24 changed colors in runtime tests, so it is no longer used for pan/zoom. For local photos, transform buttons bake a new 640x480 image and replay it through TX14/TX11. Video transform requires a native renderer/ffmpeg stage and is left unchanged.", 11, false, MUTED));
+        controls.addView(text("TX24 changed colors in runtime tests, so it is no longer used for pan/zoom. Photo controls bake a transformed camera-compatible frame and replay it. Video controls are tracked in TransformState; full realtime video transform requires the next native renderer stage, not TX24.", 11, false, MUTED));
         LinearLayout c1 = row();
         c1.addView(primaryBtn("Zoom +", v -> { tx.zoom(1.25f); applyTransform("zoom+"); }), weight());
         c1.addView(primaryBtn("Up", v -> { tx.move(0f, 0.10f); applyTransform("up"); }), weight());
@@ -150,7 +151,7 @@ public class MainActivity extends Activity {
 
         LinearLayout floating = card();
         floating.addView(section("Floating menu"));
-        floating.addView(text("Remap based on original layout: Eye=Zoom+, Face=Zoom-, Mouth=Center, arrows=pan image. For photos this bakes/replays a transformed image; TX24 is color debug only.", 12, false, MUTED));
+        floating.addView(text("Floating panel includes Play, Restore camera, status, and photo transform controls. Eye=Zoom+, Face=Zoom-, Mouth=Center, arrows=pan image. TX24 is color debug only.", 12, false, MUTED));
         LinearLayout fr = row();
         fr.addView(primaryBtn("Open floating controls", v -> startFloatPanel()), weight());
         fr.addView(primaryBtn("Overlay permission", v -> openOverlaySettings()), weight());
@@ -205,7 +206,30 @@ public class MainActivity extends Activity {
     private void playSelected() {
         String p = prefs.getString("PlayFileMp4", "");
         if (p == null || p.length() == 0) { toast("Select media first"); return; }
-        safeApplyMedia(p, "main");
+        runBg(() -> {
+            if (!binder.connected()) {
+                logger.log("ui", "service not connected before play; starting native service");
+                root.bootstrap();
+                binder.clearCache();
+                binder.setPreferredService(root.serverName());
+            }
+            safeApplyMedia(p, "main");
+        });
+    }
+
+    private void startNativeService() {
+        runBg(() -> {
+            saveServiceName();
+            prefs.edit().putString("IceCamState", "STARTING").putBoolean("ReplacementActive", false).apply();
+            logger.log("ui", "start native service requested");
+            root.bootstrap();
+            binder.clearCache();
+            binder.setPreferredService(root.serverName());
+            boolean ok = binder.connected();
+            prefs.edit().putString("IceCamState", ok ? "SERVICE_READY" : "SERVICE_ERROR").putBoolean("ReplacementActive", false).apply();
+            logger.log("ui", "service start result connected=" + ok + " " + binder.lastError());
+            refreshAll();
+        });
     }
 
     private void safeApplyMedia(String p, String source) {
@@ -229,17 +253,31 @@ public class MainActivity extends Activity {
             } else {
                 logger.log("tx24", "auto TX24 skipped; EnableTx24Color=false " + tx.summary());
             }
-            logger.log("ui", "legacy media apply done TX14=" + mode + " TX11=" + play + " TX24=" + tr + " path=" + p);
+            boolean active = mode >= 0 && play >= 0;
+            prefs.edit().putBoolean("ReplacementActive", active).putString("IceCamState", active ? "REPLACEMENT_ACTIVE" : "PLAY_ERROR").apply();
+            logger.log("ui", "legacy media apply done TX14=" + mode + " TX11=" + play + " TX24=" + tr + " active=" + active + " path=" + p);
             refreshAll();
         });
     }
 
-    private void stopNative() {
-        // v12: TX25 is destructive on this build: after pressing it, camera clients can stay black.
-        // Keep Soft stop non-destructive; use Restart daemon for a hard reset.
-        int r = binder.simple(VliveBinderClient.TX_GET_INT);
-        logger.log("ui", "soft stop: TX25 disabled, TX15/status=" + r + "; use Restart daemon for hard reset");
-        refreshAll();
+    private void stopNative() { restoreCamera(); }
+
+    private void restoreCamera() {
+        runBg(() -> {
+            prefs.edit().putString("IceCamState", "RESTORING_CAMERA").apply();
+            logger.log("ui", "restore camera requested");
+            // Do not use TX25 for ordinary stop; logs showed it can leave black clients.
+            // Restore is process-level: kill vcplax and verify service disappears.
+            root.restoreCamera();
+            binder.clearCache();
+            boolean stillConnected = binder.connected();
+            prefs.edit()
+                    .putBoolean("ReplacementActive", false)
+                    .putString("IceCamState", stillConnected ? "RESTORE_CHECK_SERVICE_STILL_VISIBLE" : "CAMERA_RESTORED")
+                    .apply();
+            logger.log("ui", "restore camera done serviceStillVisible=" + stillConnected + " " + binder.lastError());
+            refreshAll();
+        });
     }
 
     private void applyTransform(String reason) {
@@ -289,7 +327,13 @@ public class MainActivity extends Activity {
 
     private void refreshAll() {
         runOnUiThread(() -> {
-            if (status != null) status.setText("server=" + root.serverName() + "\nconnected=" + binder.connected() + "\n" + binder.lastError());
+            if (status != null) {
+                boolean active = prefs.getBoolean("ReplacementActive", false);
+                String phase = prefs.getString("IceCamState", "IDLE");
+                boolean connected = binder.connected();
+                status.setText("state=" + phase + "\nreplacementActive=" + active + "\nserver=" + root.serverName() + "\nconnected=" + connected + "\n" + binder.lastError());
+                status.setTextColor(active ? 0xff62ff91 : (connected ? 0xffffcc66 : TEXT));
+            }
             if (mediaLabel != null) {
                 String p = prefs.getString("PlayFileMp4", "");
                 mediaLabel.setText("selected=" + (p == null || p.length() == 0 ? "<none>" : p));
