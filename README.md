@@ -1,44 +1,35 @@
-# IceCam MaxRecon v8
+# IceCam v9 Report-Refined Reconstruction
 
-Clean-room Android multimedia control reconstruction based on recovered APK/DEX/native reports.
+GitHub-ready Android project.
 
-## Build on GitHub Actions
+## Build
 
-Upload this repository and run:
+Upload this repository to GitHub and run:
 
-```text
-Actions → Android APK build
-```
+`Actions -> Android APK build`
 
-The debug APK will be uploaded as an artifact.
+The workflow uploads the debug APK as an artifact.
 
-## v8 focus
+## What changed in v9
 
-- English UI
-- Gallery photo/video picker
-- root bootstrap
-- native file deployment
-- `/data/vcplax <ServerName>` launch
-- Binder diagnostics
-- TX11/TX14 source control
-- TX24 transform control
-- TX25 stop
-- floating 4x4 transform panel
-- Share log / Full status
+- English-only single-page UI.
+- Native flow preserved from the working v8 build.
+- Floating menu remapped for practical media control:
+  - Zoom + / Zoom -
+  - pan arrows
+  - Center
+  - Crop
+  - Fit/Fill
+  - Rotate 90
+  - Mirror
+  - Play / Stop
+- Report-refined diagnostics.
+- Strong TX24 logging.
 
-## Floating controls
+## Notes
 
-```text
-Zoom +     Up       Zoom -     Fit/Fill
-Left       Center   Right      Reset
-Play       Down     Loop       Status
-Rotate     Mirror   Stop       Close
-```
+`TX24` in this project means Binder transaction code 24:
 
-## TX24 layout
+`TX24(mode, panX, panY, zoomX, zoomY, flags)`
 
-```text
-TX24(mode, panX, panY, zoomX, zoomY, flags)
-```
-
-This is a compatibility reconstruction, not a 1:1 source recovery.
+It is not the same as RGB24/TX24 pixel-format conversion mentioned in some native reports.

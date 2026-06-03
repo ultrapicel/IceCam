@@ -1,7 +1,6 @@
 package dev.icecam.app;
 
 import android.app.Service;
-import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
@@ -32,6 +31,7 @@ public class FloatService extends Service {
     private TextView state;
     private TransformState tx;
     private boolean loop;
+    private boolean collapsed;
     private int lastX, lastY;
     private float touchX, touchY;
 
@@ -46,6 +46,7 @@ public class FloatService extends Service {
         binder.setPreferredService(root.serverName());
         tx = TransformState.load(prefs);
         loop = prefs.getBoolean("PlayisLoop", true);
+        collapsed = prefs.getBoolean("FloatCollapsed", false);
     }
 
     @Override public int onStartCommand(Intent i, int flags, int startId) {
@@ -71,35 +72,46 @@ public class FloatService extends Service {
         if (panel != null) return;
         wm = (WindowManager)getSystemService(WINDOW_SERVICE);
         int type = Build.VERSION.SDK_INT >= 26 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
-        lp = new WindowManager.LayoutParams(dp(318), WindowManager.LayoutParams.WRAP_CONTENT, type,
+        lp = new WindowManager.LayoutParams(collapsed ? dp(86) : dp(334), WindowManager.LayoutParams.WRAP_CONTENT, type,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.START;
         lp.x = prefs.getInt("FloatX", dp(22));
         lp.y = prefs.getInt("FloatY", dp(120));
-        panel = buildPanel();
+        panel = collapsed ? buildBubble() : buildPanel();
         wm.addView(panel, lp);
         refresh();
-        log.log("float", "v8 floating transform panel started");
+        log.log("float", "v9 floating controls started collapsed=" + collapsed);
+    }
+
+    private View buildBubble() {
+        TextView bubble = tv("IceCam\nCTL", 12, true);
+        bubble.setGravity(Gravity.CENTER);
+        bubble.setPadding(dp(8), dp(8), dp(8), dp(8));
+        bubble.setBackground(bg(0xea1a2333, dp(28), 0x88ffffff));
+        bubble.setOnClickListener(v -> { collapsed = false; prefs.edit().putBoolean("FloatCollapsed", false).apply(); redraw(); });
+        bubble.setOnTouchListener((v, e) -> drag(e));
+        return bubble;
     }
 
     private View buildPanel() {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(12), dp(10), dp(12), dp(12));
-        box.setBackground(bg(0xe61e2733, dp(24), 0x55ffffff));
+        box.setBackground(bg(0xee161d29, dp(26), 0x66ffffff));
 
-        TextView title = tv("IceCam Transform", 16, true);
-        title.setPadding(0, 0, 0, dp(4));
+        LinearLayout head = row();
+        TextView title = tv("IceCam v9 Controls", 15, true);
         title.setOnTouchListener((v, e) -> drag(e));
-        box.addView(title, new LinearLayout.LayoutParams(-1, dp(34)));
+        head.addView(title, new LinearLayout.LayoutParams(0, dp(34), 1));
+        head.addView(btn("—", v -> { collapsed = true; prefs.edit().putBoolean("FloatCollapsed", true).apply(); redraw(); }), new LinearLayout.LayoutParams(dp(42), dp(34)));
+        box.addView(head);
 
-        state = tv("", 11, false);
+        state = tv("", 10, false);
         state.setTextColor(0xffdbe7f4);
+        state.setPadding(0, 0, 0, dp(5));
         box.addView(state);
 
-        // 4 x 4 grid based on original control layout, but remapped:
-        // Eye=>Zoom+, Mouth=>Center, Face=>Zoom-, arrows=>pan image.
         LinearLayout r1 = row();
         r1.addView(btn("Zoom +", v -> { tx.zoom(1.25f); apply("zoom+"); }), weight());
         r1.addView(btn("↑", v -> { tx.move(0f, 0.10f); apply("move-up"); }), weight());
@@ -111,13 +123,13 @@ public class FloatService extends Service {
         r2.addView(btn("←", v -> { tx.move(-0.10f, 0f); apply("move-left"); }), weight());
         r2.addView(btn("Center", v -> { tx.center(); apply("center"); }), weight());
         r2.addView(btn("→", v -> { tx.move(0.10f, 0f); apply("move-right"); }), weight());
-        r2.addView(btn("Reset", v -> { tx.reset(); apply("reset"); }), weight());
+        r2.addView(btn("Crop", v -> { tx.cycleCrop(); apply("crop"); }), weight());
         box.addView(r2);
 
         LinearLayout r3 = row();
         r3.addView(btn("Play", v -> playFile()), weight());
         r3.addView(btn("↓", v -> { tx.move(0f, -0.10f); apply("move-down"); }), weight());
-        r3.addView(btn(loop ? "Loop On" : "Loop Off", v -> { loop = !loop; prefs.edit().putBoolean("PlayisLoop", loop).apply(); apply("loop"); redraw(); }), weight());
+        r3.addView(btn(loop ? "Loop On" : "Loop Off", v -> { loop = !loop; prefs.edit().putBoolean("PlayisLoop", loop).apply(); log.log("float", "loop=" + loop); redraw(); }), weight());
         r3.addView(btn("Status", v -> { root.status(); refresh(); }), weight());
         box.addView(r3);
 
@@ -148,7 +160,7 @@ public class FloatService extends Service {
             case MotionEvent.ACTION_UP:
                 prefs.edit().putInt("FloatX", lp.x).putInt("FloatY", lp.y).apply(); return true;
         }
-        return true;
+        return false;
     }
 
     private void playFile() {
@@ -157,7 +169,7 @@ public class FloatService extends Service {
         if (p == null || p.trim().isEmpty()) { toast("Select media in main app first"); return; }
         int mode = binder.setModeString(1, p);
         int play = binder.playSource(p, tx.mirrorH(), loop);
-        log.log("float", "play file TX14=" + mode + " TX11=" + play + " path=" + p);
+        log.log("float", "play TX14=" + mode + " TX11=" + play + " path=" + p + " loop=" + loop);
         apply("after-play");
         refresh();
     }
@@ -178,19 +190,39 @@ public class FloatService extends Service {
 
     private void refresh() {
         if (state == null) return;
-        state.setText(tx.summary() + "\nservice: " + binder.preferredService() + "\n" + binder.lastError());
+        String media = prefs.getString("PlayFileMp4", "");
+        if (media == null || media.length() == 0) media = "<not selected>";
+        state.setText(tx.summary() + "\nmedia=" + shortPath(media) + "\nservice=" + binder.preferredService() + "\n" + binder.lastError());
     }
+
+    private String shortPath(String p) { return p.length() > 46 ? "…" + p.substring(p.length() - 46) : p; }
 
     private Button btn(String s, View.OnClickListener l) {
         Button b = new Button(this);
-        b.setText(s); b.setAllCaps(false); b.setTextSize(11); b.setTextColor(Color.WHITE); b.setTypeface(Typeface.DEFAULT_BOLD);
-        b.setPadding(0,0,0,0);
-        b.setBackground(bg(0xaa728093, dp(16), 0x66ffffff)); b.setOnClickListener(l);
+        b.setText(s);
+        b.setAllCaps(false);
+        b.setTextSize(10);
+        b.setTextColor(Color.WHITE);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setPadding(0, 0, 0, 0);
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
+        b.setBackground(bg(0xaa6d7c92, dp(16), 0x66ffffff));
+        b.setOnClickListener(l);
         return b;
     }
-    private TextView tv(String s, int sp, boolean bold) { TextView t = new TextView(this); t.setText(s); t.setTextSize(sp); t.setTextColor(Color.WHITE); if (bold) t.setTypeface(Typeface.DEFAULT_BOLD); return t; }
+
+    private TextView tv(String s, int sp, boolean bold) {
+        TextView t = new TextView(this);
+        t.setText(s);
+        t.setTextSize(sp);
+        t.setTextColor(Color.WHITE);
+        if (bold) t.setTypeface(Typeface.DEFAULT_BOLD);
+        return t;
+    }
+
     private LinearLayout row() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); l.setGravity(Gravity.CENTER); return l; }
-    private LinearLayout.LayoutParams weight() { LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(42), 1); lp.setMargins(dp(3), dp(3), dp(3), dp(3)); return lp; }
+    private LinearLayout.LayoutParams weight() { LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1); lp.setMargins(dp(3), dp(3), dp(3), dp(3)); return lp; }
     private GradientDrawable bg(int color, int radius, int stroke) { GradientDrawable g = new GradientDrawable(); g.setColor(color); g.setCornerRadius(radius); g.setStroke(1, stroke); return g; }
     private int dp(int v) { return (int)(v * getResources().getDisplayMetrics().density + .5f); }
     private void toast(String s) { Toast.makeText(this, s, Toast.LENGTH_SHORT).show(); log.log("float", s); }
