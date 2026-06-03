@@ -69,7 +69,7 @@ public class MainActivity extends Activity {
         binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
         requestBasicPermissions();
         buildUi();
-        logger.log("app", "IceCam Core v17 queued-transform / media-slots started");
+        logger.log("app", "IceCam Core v19 stable backend queue started");
         runBg(() -> { root.bootstrap(); binder.clearCache(); binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME); refreshAll(); });
     }
 
@@ -256,7 +256,7 @@ public class MainActivity extends Activity {
                     binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
                     sleepMs(350);
                 }
-                legacyApplyMedia(p, "start/replay");
+                requestBackendApply(p, "start/replay", true);
             } finally {
                 actionBusy.set(false);
                 refreshAll();
@@ -264,18 +264,38 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void legacyApplyMedia(String p, String source) {
+    private void requestBackendApply(String path, String source, boolean force) {
+        BackendApplyQueue.get(this).enqueue(path, source, force);
+        refreshAll();
+    }
+
+    private boolean legacyApplyMediaOnce(String p, String source) {
         synchronized (backendLock) {
-            logger.log("ui", "media apply start source=" + source + " path=" + p);
-            int mode = binder.setModeString(1, p);
-            sleepMs(420);
-            int play = binder.playSource(p, tx.mirrorH(), prefs.getBoolean("PlayisLoop", true));
-            boolean active = mode >= 0 && play >= 0;
-            prefs.edit().putBoolean("ReplacementActive", active).putString("IceCamState", active ? "REPLACEMENT_ACTIVE" : "PLAY_ERROR").apply();
-            logger.log("ui", "media apply done TX14=" + mode + " TX11=" + play + " active=" + active + " path=" + p);
-            if (!active && play == -998) { // DeadObjectException in current binder client
+            try {
+                prefs.edit().putString("IceCamState", "APPLYING_MEDIA").apply();
+                logger.log("ui", "media apply start source=" + source + " path=" + p);
+                binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
+                if (!binder.connected()) {
+                    binder.clearCache();
+                    sleepMs(250);
+                }
+                int mode = binder.setModeString(1, p);
+                sleepMs(520);
+                TransformState current = TransformState.load(prefs);
+                int play = binder.playSource(p, current.mirrorH(), prefs.getBoolean("PlayisLoop", true));
+                boolean active = mode >= 0 && play >= 0;
+                prefs.edit().putBoolean("ReplacementActive", active).putString("IceCamState", active ? "REPLACEMENT_ACTIVE" : "PLAY_ERROR").apply();
+                logger.log("ui", "media apply done TX14=" + mode + " TX11=" + play + " active=" + active + " path=" + p);
+                if (!active) {
+                    binder.clearCache();
+                    logger.log("ui", "binder apply failed; cache cleared lastError=" + binder.lastError());
+                }
+                return active;
+            } catch (Throwable t) {
+                prefs.edit().putBoolean("ReplacementActive", false).putString("IceCamState", "PLAY_ERROR").apply();
                 binder.clearCache();
-                logger.log("ui", "binder dead during apply; cache cleared");
+                logger.log("ui", "media apply exception: " + t);
+                return false;
             }
         }
     }
@@ -323,7 +343,7 @@ public class MainActivity extends Activity {
                     String baked = MediaTransformer.bakeImage(this, original, snapshot, logger);
                     prefs.edit().putString("PlayFileMp4", baked).putString("BakedPlayFileMp4", baked).apply();
                     logger.log("transform", r + " baked/replay " + snapshot.summary());
-                    if (prefs.getBoolean("ReplacementActive", false)) legacyApplyMedia(baked, "transform-" + r);
+                    requestBackendApply(baked, "transform-" + r, prefs.getBoolean("ReplacementActive", false));
                     sleepMs(POST_REPLAY_COOLDOWN_MS);
                     if (!transformPending) break;
                 }

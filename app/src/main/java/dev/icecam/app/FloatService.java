@@ -85,7 +85,7 @@ public class FloatService extends Service {
         panel = buildPanel();
         wm.addView(panel, lp);
         refresh();
-        log.log("float", "v17 full floating controls started");
+        log.log("float", "v19 stable floating controls started");
     }
 
     private View buildPanel() {
@@ -207,7 +207,7 @@ public class FloatService extends Service {
                     prefs.edit().putString("IceCamState", "FLOAT_RENDERING_FRAME").apply();
                     String baked = MediaTransformer.bakeImage(this, original, snapshot, log);
                     prefs.edit().putString("PlayFileMp4", baked).putString("BakedPlayFileMp4", baked).apply();
-                    if (prefs.getBoolean("ReplacementActive", false)) replay(baked, "float-transform-" + r);
+                    requestApply(baked, "float-transform-" + r, prefs.getBoolean("ReplacementActive", false));
                     sleepMs(POST_REPLAY_COOLDOWN_MS);
                     if (!transformPending) break;
                 }
@@ -233,22 +233,38 @@ public class FloatService extends Service {
                     binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
                     sleepMs(350);
                 }
-                replay(p, "float-start");
+                requestApply(p, "float-start", true);
             } finally { busy.set(false); refresh(); }
         }, "icecam-float-start").start();
     }
 
-    private void replay(String p, String source) {
+    private void requestApply(String path, String source, boolean force) {
+        BackendApplyQueue.get(this).enqueue(path, source, force);
+        refresh();
+    }
+
+    private boolean replayOnce(String p, String source) {
         synchronized (backendLock) {
-            log.log("float", "replay start source=" + source + " path=" + p);
-            int mode = binder.setModeString(1, p);
-            sleepMs(420);
-            TransformState tx = TransformState.load(prefs);
-            int play = binder.playSource(p, tx.mirrorH(), prefs.getBoolean("PlayisLoop", true));
-            boolean active = mode >= 0 && play >= 0;
-            prefs.edit().putBoolean("ReplacementActive", active).putString("IceCamState", active ? "REPLACEMENT_ACTIVE" : "PLAY_ERROR").apply();
-            log.log("float", "replay done TX14=" + mode + " TX11=" + play + " active=" + active);
-            if (!active && play == -998) binder.clearCache();
+            try {
+                prefs.edit().putString("IceCamState", "FLOAT_APPLYING_MEDIA").apply();
+                log.log("float", "replay start source=" + source + " path=" + p);
+                binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
+                if (!binder.connected()) { binder.clearCache(); sleepMs(250); }
+                int mode = binder.setModeString(1, p);
+                sleepMs(520);
+                TransformState tx = TransformState.load(prefs);
+                int play = binder.playSource(p, tx.mirrorH(), prefs.getBoolean("PlayisLoop", true));
+                boolean active = mode >= 0 && play >= 0;
+                prefs.edit().putBoolean("ReplacementActive", active).putString("IceCamState", active ? "REPLACEMENT_ACTIVE" : "PLAY_ERROR").apply();
+                log.log("float", "replay done TX14=" + mode + " TX11=" + play + " active=" + active);
+                if (!active) binder.clearCache();
+                return active;
+            } catch (Throwable t) {
+                prefs.edit().putBoolean("ReplacementActive", false).putString("IceCamState", "PLAY_ERROR").apply();
+                binder.clearCache();
+                log.log("float", "replay exception: " + t);
+                return false;
+            }
         }
     }
 

@@ -9,11 +9,15 @@ import android.graphics.Matrix;
 import android.graphics.Paint;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Locale;
 
 public final class MediaTransformer {
     private MediaTransformer() {}
     private static final int MAX_OUTPUT_DIM = 2560;
+    private static final int MAX_BAKED_FILES = 24;
+    private static final long MAX_BAKED_AGE_MS = 6L * 60L * 60L * 1000L;
 
     public static boolean isImagePath(String path) {
         if (path == null) return false;
@@ -93,6 +97,7 @@ public final class MediaTransformer {
 
             File dir = new File(ctx.getExternalFilesDir(null), "baked");
             if (!dir.exists()) dir.mkdirs();
+            pruneBakedCache(dir, log);
             File dst = new File(dir, String.format(Locale.US, "icecam_%dx%d_%d.jpg", outW, outH, System.currentTimeMillis()));
             FileOutputStream fos = new FileOutputStream(dst);
             out.compress(Bitmap.CompressFormat.JPEG, 100, fos);
@@ -100,6 +105,7 @@ public final class MediaTransformer {
             fos.close();
             src.recycle();
             out.recycle();
+            pruneBakedCache(dir, log);
             if (log != null) log.log("bake", "image baked high-quality " + outW + "x" + outH + " " + s.summary() + " -> " + dst.getAbsolutePath());
             return dst.getAbsolutePath();
         } catch (Throwable t) {
@@ -107,4 +113,32 @@ public final class MediaTransformer {
             return sourcePath;
         }
     }
+    private static void pruneBakedCache(File dir, AppLogger log) {
+        try {
+            File[] files = dir.listFiles((d, name) -> name != null && name.startsWith("icecam_") && name.toLowerCase(Locale.US).endsWith(".jpg"));
+            if (files == null || files.length == 0) return;
+
+            long now = System.currentTimeMillis();
+            int deleted = 0;
+            for (File f : files) {
+                if (now - f.lastModified() > MAX_BAKED_AGE_MS && f.delete()) deleted++;
+            }
+
+            files = dir.listFiles((d, name) -> name != null && name.startsWith("icecam_") && name.toLowerCase(Locale.US).endsWith(".jpg"));
+            if (files == null || files.length <= MAX_BAKED_FILES) {
+                if (deleted > 0 && log != null) log.log("bake", "cache cleanup deleted=" + deleted);
+                return;
+            }
+
+            Arrays.sort(files, Comparator.comparingLong(File::lastModified));
+            int keepFrom = Math.max(0, files.length - MAX_BAKED_FILES);
+            for (int i = 0; i < keepFrom; i++) {
+                if (files[i].delete()) deleted++;
+            }
+            if (deleted > 0 && log != null) log.log("bake", "cache cleanup deleted=" + deleted + " remaining<= " + MAX_BAKED_FILES);
+        } catch (Throwable t) {
+            if (log != null) log.log("bake", "cache cleanup failed: " + t.getClass().getSimpleName() + ": " + t.getMessage());
+        }
+    }
+
 }

@@ -1,38 +1,29 @@
-# IceCam Core v17
+# IceCam Core v19
 
-GitHub-ready Android project.
+Android project for GitHub Actions builds.
 
-Main changes in this build:
+## v19 focus
 
-- M1–M4 media slots.
-- Coalesced transform apply to prevent backend overload.
-- Full floating controls.
-- Cleaner high-quality image transform replay.
-- Serialized backend operations.
+- Stable process-wide backend apply queue.
+- Immutable apply requests instead of `pendingApplyPath`/`pendingApplySource`/`pendingApplyForce` races.
+- Main UI and floating controls share `BackendApplyQueue`.
+- Legacy path remains `TX14 -> TX11`.
+- `TX24` is not used for transform.
+- `TX25` remains reserved for hard restore only.
+- Baked JPEG cache pruning added while the project transitions to realtime GPU rendering.
 
-Build with GitHub Actions: **Android APK build**.
+## Build
 
-# IceCam Core v15
+Push this repository to GitHub and run the included workflow:
 
-Clean IceCam rebuild using the best recovered parts of the original APK without keeping the old UI flow.
+```text
+.github/workflows/android.yml
+```
 
-## What is included
+The workflow builds:
 
-- Stable app name: **IceCam**
-- Stable native service name: **privsam_service**
-- Legacy native backend deployment: `libvc.so`, `libshadowhook.so`, `vcplax.so`
-- Safe start / restore lifecycle
-- Media picker for photo/video
-- Floating controller
-- TransformState model: zoom, pan, crop, rotate, mirror, fit/fill
-- Photo transform engine: bakes a transformed 640x480 JPEG and replays it through the working native backend
-- TX24 isolated as color-correction/debug only
-- GitHub Actions Android APK build
+```text
+./gradle assembleDebug
+```
 
-## Current backend behavior
-
-The recovered native backend reliably accepts local source playback through the legacy TX14 -> TX11 path. TX24 is not used for geometry because runtime tests showed it changes color/correction state.
-
-## Next native stage
-
-Realtime video zoom/pan/crop requires a clean renderer stage before the native backend: decoder -> GLES transform -> encoder/local stream/source bridge. This project is structured for that, while keeping the currently working replacement backend intact.
+using Gradle 8.11.1 from `gradle/actions/setup-gradle`.
