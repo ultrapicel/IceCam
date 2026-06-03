@@ -81,7 +81,7 @@ public class FloatService extends Service {
         panel = collapsed ? buildBubble() : buildPanel();
         wm.addView(panel, lp);
         refresh();
-        log.log("float", "v9 floating controls started collapsed=" + collapsed);
+        log.log("float", "v12 floating controls started collapsed=" + collapsed);
     }
 
     private View buildBubble() {
@@ -136,7 +136,7 @@ public class FloatService extends Service {
         LinearLayout r4 = row();
         r4.addView(btn("Rotate", v -> { tx.rotate90(); apply("rotate90"); }), weight());
         r4.addView(btn("Mirror", v -> { tx.toggleMirrorH(); apply("mirrorH"); }), weight());
-        r4.addView(btn("Stop", v -> stopNative()), weight());
+        r4.addView(btn("SoftStop", v -> stopNative()), weight());
         r4.addView(btn("Close", v -> stopSelf()), weight());
         box.addView(r4);
         return box;
@@ -170,29 +170,35 @@ public class FloatService extends Service {
         new Thread(() -> {
             prefs.edit().putString("ServerName", RootBootstrap.FIXED_SERVICE_NAME).apply();
             binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
-            log.log("float", "soft play start path=" + p + " loop=" + loop + " service=" + binder.preferredService());
-            // v11 soft-switch: do not TX25 before play, it may close the native endpoint.
-            int range = binder.setRange(0L, -1L);
-            sleepMs(80);
+            log.log("float", "legacy play start path=" + p + " loop=" + loop + " service=" + binder.preferredService());
+            // v12: last known working order. No TX25/TX22. TX24 only when explicitly enabled.
             int mode = binder.setModeString(1, p);
-            sleepMs(120);
+            sleepMs(220);
             int play = binder.playSource(p, tx.mirrorH(), loop);
-            sleepMs(180);
-            int tr = binder.setTransform(tx);
-            log.log("float", "soft play done TX22=" + range + " TX14=" + mode + " TX11=" + play + " TX24=" + tr + " path=" + p);
+            sleepMs(260);
+            int tr = -1000;
+            if (prefs.getBoolean("EnableTx24", false)) tr = binder.setTransform(tx);
+            else log.log("tx24", "float auto TX24 skipped; EnableTx24=false " + tx.summary());
+            log.log("float", "legacy play done TX14=" + mode + " TX11=" + play + " TX24=" + tr + " path=" + p);
             refresh();
         }, "icecam-float-play").start();
     }
 
     private void stopNative() {
-        int r = binder.simple(VliveBinderClient.TX_25);
-        log.log("float", "stop TX25=" + r);
+        // TX25 is destructive on this native build and can cause black camera clients.
+        int r = binder.simple(VliveBinderClient.TX_GET_INT);
+        log.log("float", "soft stop: TX25 disabled, TX15/status=" + r);
         refresh();
     }
 
     private void apply(String reason) {
         tx.save(prefs);
         prefs.edit().putBoolean("PlayisLoop", loop).apply();
+        if (!prefs.getBoolean("EnableTx24", false)) {
+            log.log("tx24", reason + " saved only; EnableTx24=false " + tx.summary());
+            refresh();
+            return;
+        }
         int r = binder.setTransform(tx);
         log.log("float", reason + " TX24=" + r + " " + tx.summary());
         refresh();

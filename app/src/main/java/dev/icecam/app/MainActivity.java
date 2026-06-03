@@ -56,7 +56,7 @@ public class MainActivity extends Activity {
         requestBasicPermissions();
         buildUi();
         logger.setListener(text -> runOnUiThread(() -> { if (logView != null) logView.setText(trimLog(text)); }));
-        logger.log("app", "IceCam v10 stable-service reconstruction started");
+        logger.log("app", "IceCam v12 black-screen recovery build started");
         logger.log("app", "ServerName=" + root.serverName());
         runBg(() -> { root.bootstrap(); binder.setPreferredService(root.serverName()); refreshAll(); });
     }
@@ -87,7 +87,7 @@ public class MainActivity extends Activity {
     private void render() {
         body.removeAllViews();
         body.addView(title("IceCam"));
-        body.addView(text("v10 stable control layer. Fixed service name: privsam_service. Native binaries are kept untouched; this build focuses on reliable media switching, floating controls, and runtime diagnostics.", 13, false, MUTED));
+        body.addView(text("v12 recovery layer. Fixed service name: privsam_service. Native binaries are untouched. This build restores the legacy play sequence and disables destructive stop/TX24 auto-apply by default to avoid black frames.", 13, false, MUTED));
 
         LinearLayout stateCard = card();
         stateCard.addView(section("Status"));
@@ -108,17 +108,20 @@ public class MainActivity extends Activity {
         LinearLayout mr = row();
         mr.addView(primaryBtn("Select media", v -> pickMedia()), weight());
         mr.addView(primaryBtn("Play selected", v -> playSelected()), weight());
-        mr.addView(primaryBtn("Stop", v -> stopNative()), weight());
+        mr.addView(primaryBtn("Soft stop", v -> stopNative()), weight());
+        mr.addView(primaryBtn("Restart daemon", v -> runBg(() -> { root.bootstrap(); binder.clearCache(); refreshAll(); })), weight());
         media.addView(mr);
         loop = check("Loop playback", prefs.getBoolean("PlayisLoop", true), (b, v) -> { prefs.edit().putBoolean("PlayisLoop", v).apply(); logger.log("ui", "loop=" + v); });
         media.addView(loop);
         body.addView(media);
 
         LinearLayout controls = card();
-        controls.addView(section("TX24 transform controls"));
+        controls.addView(section("Transform controls (experimental TX24)"));
         transformLabel = text("", 12, false, TEXT);
         transformLabel.setTextIsSelectable(true);
         controls.addView(transformLabel);
+        controls.addView(check("Enable TX24 transform calls (experimental)", prefs.getBoolean("EnableTx24", false), (b, v) -> { prefs.edit().putBoolean("EnableTx24", v).apply(); logger.log("tx24", "EnableTx24=" + v); }));
+        controls.addView(text("Default OFF because current logs show TX24 returns 14 and may not be the image transform command on this native build. Buttons still save state; enable this only for testing.", 11, false, MUTED));
         LinearLayout c1 = row();
         c1.addView(primaryBtn("Zoom +", v -> { tx.zoom(1.25f); applyTransform("zoom+"); }), weight());
         c1.addView(primaryBtn("Up", v -> { tx.move(0f, 0.10f); applyTransform("up"); }), weight());
@@ -208,29 +211,44 @@ public class MainActivity extends Activity {
     private void safeApplyMedia(String p, String source) {
         tx.save(prefs);
         runBg(() -> {
-            logger.log("ui", "soft media apply start source=" + source + " path=" + p + " service=" + binder.preferredService());
-            // v11 soft-switch: TX25 can close/reset the native endpoint on some builds.
-            // Do not send it during normal media switching. Keep TX25 only for manual Stop.
-            int range = binder.setRange(0L, -1L);
-            sleepMs(80);
+            prefs.edit().putString("ServerName", RootBootstrap.FIXED_SERVICE_NAME).apply();
+            binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
+            logger.log("ui", "legacy media apply start source=" + source + " path=" + p + " service=" + binder.preferredService());
+
+            // v12: restore the last known working sequence from v8/v9.
+            // Do NOT call TX25 here: it can close the native endpoint and leave clients black.
+            // Do NOT call TX22 by default: it may be a status/range command, not required for source apply.
+            // Do NOT call TX24 automatically: logs show TX24 returns 14 and does not behave as a reliable transform command.
             int mode = binder.setModeString(1, p);
-            sleepMs(120);
+            sleepMs(220);
             int play = binder.playSource(p, tx.mirrorH(), prefs.getBoolean("PlayisLoop", true));
-            sleepMs(180);
-            int tr = binder.setTransform(tx);
-            logger.log("ui", "soft media apply done TX22=" + range + " TX14=" + mode + " TX11=" + play + " TX24=" + tr + " path=" + p);
+            sleepMs(260);
+            int tr = -1000;
+            if (prefs.getBoolean("EnableTx24", false)) {
+                tr = binder.setTransform(tx);
+            } else {
+                logger.log("tx24", "auto TX24 skipped; EnableTx24=false " + tx.summary());
+            }
+            logger.log("ui", "legacy media apply done TX14=" + mode + " TX11=" + play + " TX24=" + tr + " path=" + p);
             refreshAll();
         });
     }
 
     private void stopNative() {
-        int r = binder.simple(VliveBinderClient.TX_25);
-        logger.log("ui", "stop TX25=" + r);
+        // v12: TX25 is destructive on this build: after pressing it, camera clients can stay black.
+        // Keep Soft stop non-destructive; use Restart daemon for a hard reset.
+        int r = binder.simple(VliveBinderClient.TX_GET_INT);
+        logger.log("ui", "soft stop: TX25 disabled, TX15/status=" + r + "; use Restart daemon for hard reset");
         refreshAll();
     }
 
     private void applyTransform(String reason) {
         tx.save(prefs);
+        if (!prefs.getBoolean("EnableTx24", false)) {
+            logger.log("tx24", reason + " saved only; EnableTx24=false " + tx.summary());
+            refreshAll();
+            return;
+        }
         int r = binder.setTransform(tx);
         logger.log("tx24", reason + " result=" + r + " " + tx.summary());
         refreshAll();

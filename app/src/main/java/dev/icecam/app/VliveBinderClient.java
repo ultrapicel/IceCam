@@ -38,6 +38,7 @@ public final class VliveBinderClient {
     }
     public String preferredService() { return preferredService; }
     public String lastError() { return lastError; }
+    public void clearCache() { cachedBinder = null; cachedName = null; lastError = "cache cleared"; }
 
     public String[] listServices() {
         try {
