@@ -177,8 +177,8 @@ public class FloatService extends Service {
             int play = binder.playSource(p, tx.mirrorH(), loop);
             sleepMs(260);
             int tr = -1000;
-            if (prefs.getBoolean("EnableTx24", false)) tr = binder.setTransform(tx);
-            else log.log("tx24", "float auto TX24 skipped; EnableTx24=false " + tx.summary());
+            if (prefs.getBoolean("EnableTx24Color", false)) tr = binder.setTransform(tx);
+            else log.log("tx24", "float auto TX24 skipped; EnableTx24Color=false " + tx.summary());
             log.log("float", "legacy play done TX14=" + mode + " TX11=" + play + " TX24=" + tr + " path=" + p);
             refresh();
         }, "icecam-float-play").start();
@@ -194,14 +194,31 @@ public class FloatService extends Service {
     private void apply(String reason) {
         tx.save(prefs);
         prefs.edit().putBoolean("PlayisLoop", loop).apply();
-        if (!prefs.getBoolean("EnableTx24", false)) {
-            log.log("tx24", reason + " saved only; EnableTx24=false " + tx.summary());
+        String current = prefs.getString("OriginalPlayFileMp4", prefs.getString("PlayFileMp4", ""));
+        if (current == null || current.length() == 0) {
+            log.log("float", reason + " saved only; no selected media " + tx.summary());
             refresh();
             return;
         }
-        int r = binder.setTransform(tx);
-        log.log("float", reason + " TX24=" + r + " " + tx.summary());
-        refresh();
+        if (!MediaTransformer.isImagePath(current)) {
+            log.log("float", reason + " saved only for video/non-image; TX24 is color debug, not pan/zoom. " + tx.summary());
+            refresh();
+            return;
+        }
+        new Thread(() -> {
+            String baked = MediaTransformer.bakeImage(this, current, tx, log);
+            prefs.edit().putString("PlayFileMp4", baked).putString("BakedPlayFileMp4", baked).apply();
+            binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
+            log.log("float", reason + " baked/replay path=" + baked + " " + tx.summary());
+            int mode = binder.setModeString(1, baked);
+            sleepMs(220);
+            int play = binder.playSource(baked, tx.mirrorH(), loop);
+            int tr = -1000;
+            if (prefs.getBoolean("EnableTx24Color", false)) tr = binder.setTransform(tx);
+            else log.log("tx24", "float TX24 color debug skipped; EnableTx24Color=false");
+            log.log("float", reason + " replay done TX14=" + mode + " TX11=" + play + " TX24=" + tr);
+            refresh();
+        }, "icecam-float-bake").start();
     }
 
     private void refresh() {

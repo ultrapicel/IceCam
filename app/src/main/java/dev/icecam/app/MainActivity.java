@@ -56,7 +56,7 @@ public class MainActivity extends Activity {
         requestBasicPermissions();
         buildUi();
         logger.setListener(text -> runOnUiThread(() -> { if (logView != null) logView.setText(trimLog(text)); }));
-        logger.log("app", "IceCam v12 black-screen recovery build started");
+        logger.log("app", "IceCam v13 baked-transform build started");
         logger.log("app", "ServerName=" + root.serverName());
         runBg(() -> { root.bootstrap(); binder.setPreferredService(root.serverName()); refreshAll(); });
     }
@@ -87,7 +87,7 @@ public class MainActivity extends Activity {
     private void render() {
         body.removeAllViews();
         body.addView(title("IceCam"));
-        body.addView(text("v12 recovery layer. Fixed service name: privsam_service. Native binaries are untouched. This build restores the legacy play sequence and disables destructive stop/TX24 auto-apply by default to avoid black frames.", 13, false, MUTED));
+        body.addView(text("v13 baked-transform layer. Fixed service name: privsam_service. Native binaries are untouched. TX24 is treated as color-correction/debug, not pan/zoom. Image pan/zoom/rotate/mirror are baked into selected local photos before replay.", 13, false, MUTED));
 
         LinearLayout stateCard = card();
         stateCard.addView(section("Status"));
@@ -116,12 +116,12 @@ public class MainActivity extends Activity {
         body.addView(media);
 
         LinearLayout controls = card();
-        controls.addView(section("Transform controls (experimental TX24)"));
+        controls.addView(section("Image transform controls"));
         transformLabel = text("", 12, false, TEXT);
         transformLabel.setTextIsSelectable(true);
         controls.addView(transformLabel);
-        controls.addView(check("Enable TX24 transform calls (experimental)", prefs.getBoolean("EnableTx24", false), (b, v) -> { prefs.edit().putBoolean("EnableTx24", v).apply(); logger.log("tx24", "EnableTx24=" + v); }));
-        controls.addView(text("Default OFF because current logs show TX24 returns 14 and may not be the image transform command on this native build. Buttons still save state; enable this only for testing.", 11, false, MUTED));
+        controls.addView(check("Enable TX24 color-correction debug", prefs.getBoolean("EnableTx24Color", false), (b, v) -> { prefs.edit().putBoolean("EnableTx24Color", v).apply(); logger.log("tx24", "EnableTx24Color=" + v); }));
+        controls.addView(text("TX24 changed colors in runtime tests, so it is no longer used for pan/zoom. For local photos, transform buttons bake a new 640x480 image and replay it through TX14/TX11. Video transform requires a native renderer/ffmpeg stage and is left unchanged.", 11, false, MUTED));
         LinearLayout c1 = row();
         c1.addView(primaryBtn("Zoom +", v -> { tx.zoom(1.25f); applyTransform("zoom+"); }), weight());
         c1.addView(primaryBtn("Up", v -> { tx.move(0f, 0.10f); applyTransform("up"); }), weight());
@@ -150,7 +150,7 @@ public class MainActivity extends Activity {
 
         LinearLayout floating = card();
         floating.addView(section("Floating menu"));
-        floating.addView(text("Remap based on original layout: Eye=Zoom+, Face=Zoom-, Mouth=Center, arrows=pan image. The native libraries are not patched.", 12, false, MUTED));
+        floating.addView(text("Remap based on original layout: Eye=Zoom+, Face=Zoom-, Mouth=Center, arrows=pan image. For photos this bakes/replays a transformed image; TX24 is color debug only.", 12, false, MUTED));
         LinearLayout fr = row();
         fr.addView(primaryBtn("Open floating controls", v -> startFloatPanel()), weight());
         fr.addView(primaryBtn("Overlay permission", v -> openOverlaySettings()), weight());
@@ -196,7 +196,7 @@ public class MainActivity extends Activity {
             Uri uri = data.getData();
             try { getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Throwable ignored) {}
             String path = MediaResolver.resolveToReadableFile(this, uri, logger);
-            prefs.edit().putString("PlayFileMp4", path).putInt("PlayFileType", 1).apply();
+            prefs.edit().putString("OriginalPlayFileMp4", path).putString("PlayFileMp4", path).putInt("PlayFileType", 1).apply();
             logger.log("media", "selected=" + path);
             refreshAll();
         }
@@ -224,10 +224,10 @@ public class MainActivity extends Activity {
             int play = binder.playSource(p, tx.mirrorH(), prefs.getBoolean("PlayisLoop", true));
             sleepMs(260);
             int tr = -1000;
-            if (prefs.getBoolean("EnableTx24", false)) {
+            if (prefs.getBoolean("EnableTx24Color", false)) {
                 tr = binder.setTransform(tx);
             } else {
-                logger.log("tx24", "auto TX24 skipped; EnableTx24=false " + tx.summary());
+                logger.log("tx24", "auto TX24 skipped; EnableTx24Color=false " + tx.summary());
             }
             logger.log("ui", "legacy media apply done TX14=" + mode + " TX11=" + play + " TX24=" + tr + " path=" + p);
             refreshAll();
@@ -244,14 +244,23 @@ public class MainActivity extends Activity {
 
     private void applyTransform(String reason) {
         tx.save(prefs);
-        if (!prefs.getBoolean("EnableTx24", false)) {
-            logger.log("tx24", reason + " saved only; EnableTx24=false " + tx.summary());
+        String current = prefs.getString("OriginalPlayFileMp4", prefs.getString("PlayFileMp4", ""));
+        if (current == null || current.length() == 0) {
+            logger.log("transform", reason + " saved only; no selected media " + tx.summary());
             refreshAll();
             return;
         }
-        int r = binder.setTransform(tx);
-        logger.log("tx24", reason + " result=" + r + " " + tx.summary());
-        refreshAll();
+        if (!MediaTransformer.isImagePath(current)) {
+            logger.log("transform", reason + " saved only for video/non-image; native TX24 is color debug, not pan/zoom. " + tx.summary());
+            refreshAll();
+            return;
+        }
+        runBg(() -> {
+            String baked = MediaTransformer.bakeImage(this, current, tx, logger);
+            prefs.edit().putString("PlayFileMp4", baked).putString("BakedPlayFileMp4", baked).apply();
+            logger.log("transform", reason + " baked/replay path=" + baked + " " + tx.summary());
+            safeApplyMedia(baked, "transform-" + reason);
+        });
     }
 
     private void startFloatPanel() {
