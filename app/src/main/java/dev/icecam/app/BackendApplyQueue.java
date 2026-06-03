@@ -2,6 +2,7 @@ package dev.icecam.app;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import java.io.File;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -14,7 +15,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * produce mixed path/source/force state.
  */
 public final class BackendApplyQueue {
-    private static final long POST_REPLAY_COOLDOWN_MS = 420L;
+    private static final long POST_REPLAY_COOLDOWN_MS = 650L;
     private static volatile BackendApplyQueue instance;
 
     public static BackendApplyQueue get(Context context) {
@@ -77,7 +78,7 @@ public final class BackendApplyQueue {
         }
         pending.set(req);
         prefs.edit().putString("IceCamState", "APPLY_QUEUED").apply();
-        log.log("applyq", "queued #" + req.sequence + " source=" + req.source + " force=" + req.force + " path=" + req.path);
+        log.log("applyq", "queued #" + req.sequence + " source=" + req.source + " force=" + req.force + " running=" + worker.get() + " path=" + req.path);
         startWorkerIfNeeded();
     }
 
@@ -123,22 +124,28 @@ public final class BackendApplyQueue {
         synchronized (backendLock) {
             try {
                 prefs.edit().putString("IceCamState", "APPLYING_MEDIA").apply();
-                log.log("applyq", "legacy apply " + (retry ? "retry" : "start") + " #" + req.sequence + " source=" + req.source + " path=" + req.path);
+                File f = new File(req.path);
+                long t0 = android.os.SystemClock.elapsedRealtime();
+                log.log("applyq", "legacy apply " + (retry ? "retry" : "start") + " #" + req.sequence + " source=" + req.source + " exists=" + f.exists() + " size=" + (f.exists() ? f.length() : -1L) + " path=" + req.path);
                 binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
                 if (!binder.connected()) {
                     binder.clearCache();
                     sleepMs(250);
                 }
+                long tx14Start = android.os.SystemClock.elapsedRealtime();
                 int mode = binder.setModeString(1, req.path); // TX14 mode 1 -> path
+                long tx14Ms = android.os.SystemClock.elapsedRealtime() - tx14Start;
                 sleepMs(520);
                 TransformState current = TransformState.load(prefs);
+                long tx11Start = android.os.SystemClock.elapsedRealtime();
                 int play = binder.playSource(req.path, current.mirrorH(), prefs.getBoolean("PlayisLoop", true)); // TX11
+                long tx11Ms = android.os.SystemClock.elapsedRealtime() - tx11Start;
                 boolean active = mode >= 0 && play >= 0;
                 prefs.edit()
                         .putBoolean("ReplacementActive", active)
                         .putString("IceCamState", active ? "REPLACEMENT_ACTIVE" : "PLAY_ERROR")
                         .apply();
-                log.log("applyq", "legacy apply done #" + req.sequence + " TX14=" + mode + " TX11=" + play + " active=" + active);
+                log.log("applyq", "legacy apply done #" + req.sequence + " TX14=" + mode + "(" + tx14Ms + "ms) TX11=" + play + "(" + tx11Ms + "ms) total=" + (android.os.SystemClock.elapsedRealtime() - t0) + "ms active=" + active);
                 if (!active) binder.clearCache();
                 return active;
             } catch (Throwable t) {

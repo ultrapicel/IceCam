@@ -34,8 +34,10 @@ public class MainActivity extends Activity {
     private static final int RED = 0xffff5e73;
     private static final int TEXT = 0xffedf3ff;
     private static final int MUTED = 0xffaab5c8;
-    private static final long QUIET_TRANSFORM_MS = 900L;
-    private static final long POST_REPLAY_COOLDOWN_MS = 420L;
+    private static final long QUIET_TRANSFORM_MS = 1400L;
+    private static final long POST_REPLAY_COOLDOWN_MS = 650L;
+    // v20 safe mode: transform buttons update state only. Backend replay is explicit via Apply now.
+    private static final boolean AUTO_APPLY_TRANSFORMS = false;
 
     private AppLogger logger;
     private RootBootstrap root;
@@ -69,7 +71,7 @@ public class MainActivity extends Activity {
         binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
         requestBasicPermissions();
         buildUi();
-        logger.log("app", "IceCam Core v19 stable backend queue started");
+        logger.log("app", "IceCam Core v20 diagnostic safe-transform started autoApply=" + AUTO_APPLY_TRANSFORMS);
         runBg(() -> { root.bootstrap(); binder.clearCache(); binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME); refreshAll(); });
     }
 
@@ -99,7 +101,7 @@ public class MainActivity extends Activity {
     private void render() {
         body.removeAllViews();
         body.addView(title("IceCam"));
-        body.addView(text("Stable media replacement controller", 13, false, MUTED));
+        body.addView(text("Diagnostic safe-transform controller", 13, false, MUTED));
 
         LinearLayout stateCard = card();
         stateCard.addView(section("Status"));
@@ -152,7 +154,7 @@ public class MainActivity extends Activity {
         transformLabel = text("", 12, false, TEXT);
         transformLabel.setTextIsSelectable(true);
         controls.addView(transformLabel);
-        controls.addView(text("Controls are now coalesced: rapid taps update the state immediately, then IceCam applies one final frame after a short pause. This prevents backend overload.", 11, false, MUTED));
+        controls.addView(text("v20 safe mode: buttons update TransformState only. Use Apply now to bake/replay one final frame. This avoids breaking the native stream on every tap.", 11, false, MUTED));
 
         LinearLayout c1 = row();
         c1.addView(primaryBtn("Zoom +", v -> { tx.zoom(1.12f); applyTransform("zoom+"); }, PRIMARY), weight());
@@ -302,19 +304,22 @@ public class MainActivity extends Activity {
 
     private void applyTransform(String reason) {
         tx.save(prefs);
+        prefs.edit().putString("IceCamState", "TRANSFORM_DIRTY").apply();
+        logger.log("transform", reason + " state-only " + tx.summary() + " autoApply=" + AUTO_APPLY_TRANSFORMS);
         refreshAll();
         String original = prefs.getString("OriginalPlayFileMp4", prefs.getString("PlayFileMp4", ""));
         if (original == null || original.length() == 0) return;
         if (!MediaTransformer.isImagePath(original)) {
-            logger.log("transform", reason + " saved for video; realtime video transform is not part of this backend. " + tx.summary());
+            logger.log("transform", reason + " saved for video; realtime video transform is pending GPU renderer. " + tx.summary());
             return;
         }
-        scheduleImageBake(reason);
+        if (AUTO_APPLY_TRANSFORMS) scheduleImageBake(reason);
     }
 
     private void forceApplyTransform(String reason) {
         tx.save(prefs);
         transformPending = false;
+        logger.log("transform", reason + " explicit bake/replay requested " + tx.summary());
         scheduleImageBake(reason + "-force");
     }
 
@@ -342,7 +347,7 @@ public class MainActivity extends Activity {
                     prefs.edit().putString("IceCamState", "RENDERING_FRAME").apply();
                     String baked = MediaTransformer.bakeImage(this, original, snapshot, logger);
                     prefs.edit().putString("PlayFileMp4", baked).putString("BakedPlayFileMp4", baked).apply();
-                    logger.log("transform", r + " baked/replay " + snapshot.summary());
+                    logger.log("transform", r + " baked/replay explicit=" + (!AUTO_APPLY_TRANSFORMS) + " " + snapshot.summary());
                     requestBackendApply(baked, "transform-" + r, prefs.getBoolean("ReplacementActive", false));
                     sleepMs(POST_REPLAY_COOLDOWN_MS);
                     if (!transformPending) break;
@@ -414,7 +419,7 @@ public class MainActivity extends Activity {
                 String p = prefs.getString("PlayFileMp4", "");
                 mediaLabel.setText(p == null || p.length() == 0 ? "No active media" : "Active M" + activeSlot + ": " + shortPath(p));
             }
-            if (transformLabel != null) transformLabel.setText(tx.summary() + (transformWorker.get() ? "\nQueued apply: waiting for stable input…" : ""));
+            if (transformLabel != null) transformLabel.setText(tx.summary() + (transformWorker.get() ? "\nRendering/applying explicit frame…" : "\nDirty state: use Apply now to update backend."));
         });
     }
 
@@ -430,10 +435,13 @@ public class MainActivity extends Activity {
 
     private void shareLog() {
         try {
+            logger.logDivider("diag", "export requested");
+            String diag = DiagnosticDumper.build(this, logger, binder);
+            logger.log("diag", "snapshot built chars=" + diag.length());
             Intent i = new Intent(Intent.ACTION_SEND);
             i.setType("text/plain");
-            i.putExtra(Intent.EXTRA_TEXT, logger.text());
-            startActivity(Intent.createChooser(i, "Export IceCam log"));
+            i.putExtra(Intent.EXTRA_TEXT, diag + "\n\n--- runtime-log-ring ---\n" + logger.text());
+            startActivity(Intent.createChooser(i, "Export IceCam diagnostics"));
         } catch (Throwable t) { toast("Export failed: " + t.getMessage()); }
     }
 
