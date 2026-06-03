@@ -101,7 +101,7 @@ public class FloatService extends Service {
         box.setBackground(bg(0xee161d29, dp(26), 0x66ffffff));
 
         LinearLayout head = row();
-        TextView title = tv("IceCam v9 Controls", 15, true);
+        TextView title = tv("IceCam Controls", 15, true);
         title.setOnTouchListener((v, e) -> drag(e));
         head.addView(title, new LinearLayout.LayoutParams(0, dp(34), 1));
         head.addView(btn("—", v -> { collapsed = true; prefs.edit().putBoolean("FloatCollapsed", true).apply(); redraw(); }), new LinearLayout.LayoutParams(dp(42), dp(34)));
@@ -167,11 +167,22 @@ public class FloatService extends Service {
         tx.save(prefs);
         String p = prefs.getString("PlayFileMp4", "");
         if (p == null || p.trim().isEmpty()) { toast("Select media in main app first"); return; }
-        int mode = binder.setModeString(1, p);
-        int play = binder.playSource(p, tx.mirrorH(), loop);
-        log.log("float", "play TX14=" + mode + " TX11=" + play + " path=" + p + " loop=" + loop);
-        apply("after-play");
-        refresh();
+        new Thread(() -> {
+            prefs.edit().putString("ServerName", RootBootstrap.FIXED_SERVICE_NAME).apply();
+            binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
+            log.log("float", "safe play start path=" + p + " loop=" + loop + " service=" + binder.preferredService());
+            int stop = binder.simple(VliveBinderClient.TX_25);
+            sleepMs(180);
+            int range = binder.setRange(0L, -1L);
+            sleepMs(80);
+            int mode = binder.setModeString(1, p);
+            sleepMs(80);
+            int play = binder.playSource(p, tx.mirrorH(), loop);
+            sleepMs(120);
+            int tr = binder.setTransform(tx);
+            log.log("float", "safe play done TX25=" + stop + " TX22=" + range + " TX14=" + mode + " TX11=" + play + " TX24=" + tr + " path=" + p);
+            refresh();
+        }, "icecam-float-play").start();
     }
 
     private void stopNative() {
@@ -196,6 +207,7 @@ public class FloatService extends Service {
     }
 
     private String shortPath(String p) { return p.length() > 46 ? "…" + p.substring(p.length() - 46) : p; }
+    private static void sleepMs(long ms) { try { Thread.sleep(ms); } catch (InterruptedException ignored) {} }
 
     private Button btn(String s, View.OnClickListener l) {
         Button b = new Button(this);

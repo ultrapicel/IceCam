@@ -7,7 +7,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <application android:name=".IceCamApp" android:theme="@style/AppTheme" android:label="IceCam v9" android:extractNativeLibs="true" android:resizeableActivity="true">
+    <application android:name=".IceCamApp" android:theme="@style/AppTheme" android:label="IceCam" android:extractNativeLibs="true" android:resizeableActivity="true">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

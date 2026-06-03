@@ -14,11 +14,12 @@ public final class VliveBinderClient {
             TX_RANGE = 22, TX_TRANSFORM = 24, TX_25 = 25;
 
     private final AppLogger log;
-    private String preferredService = DESCRIPTOR;
+    private String preferredService = RootBootstrap.FIXED_SERVICE_NAME;
     private String lastError = "not connected";
 
     // Only exact recovered/native names. Do not fall back to random Xiaomi services: they accept a different interface token.
     private final List<String> candidates = new ArrayList<>(Arrays.asList(
+            RootBootstrap.FIXED_SERVICE_NAME,
             "com.xiaomi.vlive.IMyBinderService",
             "vlive",
             "vlive_service",

@@ -2,37 +2,28 @@ package dev.icecam.app;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import java.util.Locale;
-import java.util.Random;
 
 public final class RootBootstrap {
+    public static final String FIXED_SERVICE_NAME = "privsam_service";
     private final Context ctx;
     private final AppLogger log;
     public RootBootstrap(Context c, AppLogger logger) { ctx = c.getApplicationContext(); log = logger; }
 
     public String serverName() {
         SharedPreferences p = ctx.getSharedPreferences("app_config", Context.MODE_PRIVATE);
-        String s = p.getString("ServerName", "");
-        if (s == null || s.trim().isEmpty()) {
-            s = makeName();
+        String s = p.getString("ServerName", FIXED_SERVICE_NAME);
+        // v10: stable Binder service name. Random names break reconnects after media changes.
+        if (s == null || s.trim().isEmpty() || !FIXED_SERVICE_NAME.equals(s.trim())) {
+            s = FIXED_SERVICE_NAME;
             p.edit().putString("ServerName", s).apply();
         }
         return s;
     }
 
     public String resetServerName() {
-        String s = makeName();
-        ctx.getSharedPreferences("app_config", Context.MODE_PRIVATE).edit().putString("ServerName", s).apply();
-        log.log("root", "new ServerName=" + s);
-        return s;
-    }
-
-    private String makeName() {
-        String abc = "abcdefghijklmnopqrstuvwxyz";
-        Random rnd = new Random();
-        StringBuilder sb = new StringBuilder(12);
-        for (int i = 0; i < 12; i++) sb.append(abc.charAt(rnd.nextInt(abc.length())));
-        return sb.toString();
+        ctx.getSharedPreferences("app_config", Context.MODE_PRIVATE).edit().putString("ServerName", FIXED_SERVICE_NAME).apply();
+        log.log("root", "ServerName fixed=" + FIXED_SERVICE_NAME);
+        return FIXED_SERVICE_NAME;
     }
 
     public String bootstrap() {
@@ -55,20 +46,22 @@ public final class RootBootstrap {
                 "cp -f $SRC/libshadowhook.so /data/camera/libshadowhook.so\n" +
                 "cp -f $SRC/libvc.so /data/camera/libvc.so\n" +
                 "cp -f $SRC/vcplax.so /data/camera/vcplax\n" +
-                "cp -f $SRC/vcplax.so /data/vcplax\n" +
-                "chmod 700 /data/vcplax /data/camera/vcplax\n" +
-                "chmod 644 /data/libvc.so /data/libvc++.so /data/camera/libvc.so /data/camera/libshadowhook.so\n" +
+                "cp -f $SRC/vcplax.so /data/vcplax 2>/dev/null || true\n" +
+                "chmod 700 /data/camera/vcplax /data/vcplax 2>/dev/null || true\n" +
+                "chmod 644 /data/libvc.so /data/libvc++.so /data/camera/libvc.so /data/camera/libshadowhook.so 2>/dev/null || true\n" +
                 "rm -f /data/camera/vcplax.log /data/camera/vcplax.err\n" +
                 "export LD_LIBRARY_PATH=/data/camera:/data:/system/lib64:/system_ext/lib64:/vendor/lib64:/system/lib:/system_ext/lib:/vendor/lib:$LD_LIBRARY_PATH\n" +
                 "export ICECAM_SERVER=$SERVER\n" +
-                "echo ---launch /data/vcplax $SERVER---\n" +
-                "nohup /data/vcplax $SERVER >/data/camera/vcplax.log 2>/data/camera/vcplax.err &\n" +
-                "echo spawned_pid=$!\n" +
-                "sleep 2\n" +
+                "EXEC=/data/vcplax\n" +
+                "[ -x /data/vcplax ] || EXEC=/data/camera/vcplax\n" +
+                "echo ---launch $EXEC $SERVER---\n" +
+                "nohup $EXEC $SERVER >/data/camera/vcplax.log 2>/data/camera/vcplax.err &\n" +
+                "echo spawned_pid=$! exec=$EXEC\n" +
+                "for i in 1 2 3 4 5; do sleep 1; service check $SERVER 2>&1 | grep -qi found && break; done\n" +
                 "echo ---process---\nps -A | grep -i vcplax || ps | grep -i vcplax || true\n" +
                 "echo ---expected-service---\nservice check $SERVER 2>&1 || true\n" +
                 "echo ---service-list-filtered---\nservice list 2>/dev/null | grep -iE \"$SERVER|vlive|camera|media|ice|vcplax\" || true\n" +
-                "echo ---files---\nls -l /data/camera /data/vcplax /data/libvc.so /data/libvc++.so 2>&1\n" +
+                "echo ---files---\nls -l /data/camera 2>&1; ls -l /data/vcplax /data/libvc.so /data/libvc++.so 2>&1 || true\n" +
                 "echo ---vcplax.log---\ncat /data/camera/vcplax.log 2>/dev/null || true\n" +
                 "echo ---vcplax.err---\ncat /data/camera/vcplax.err 2>/dev/null || true\n" +
                 "echo ---selinux-after---\ngetenforce 2>/dev/null || true\n";
@@ -87,7 +80,7 @@ public final class RootBootstrap {
                 "echo ---process---\nps -A | grep -i vcplax || ps | grep -i vcplax || true\n" +
                 "echo ---expected-service---\nservice check $SERVER 2>&1 || true\n" +
                 "echo ---service-list-filtered---\nservice list 2>/dev/null | grep -iE \"$SERVER|vlive|camera|media|ice|vcplax\" || true\n" +
-                "echo ---files---\nls -l /data/camera /data/vcplax /data/libvc.so /data/libvc++.so 2>&1\n" +
+                "echo ---files---\nls -l /data/camera 2>&1; ls -l /data/vcplax /data/libvc.so /data/libvc++.so 2>&1 || true\n" +
                 "echo ---vcplax-log---\ntail -160 /data/camera/vcplax.log 2>/dev/null || true\n" +
                 "echo ---vcplax-err---\ntail -160 /data/camera/vcplax.err 2>/dev/null || true\n" +
                 "echo ---logcat-native---\nlogcat -d -t 220 2>/dev/null | grep -iE \"icecam|vcplax|vlive|libvc|shadowhook|binder|servicemanager|avc: denied|Parcel\" || true\n";

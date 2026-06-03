@@ -1,4 +1,4 @@
-# IceCam v9 Report-Refined Reconstruction
+# IceCam v10 Report-Refined Reconstruction
 
 GitHub-ready Android project.
 
@@ -10,7 +10,7 @@ Upload this repository to GitHub and run:
 
 The workflow uploads the debug APK as an artifact.
 
-## What changed in v9
+## What changed in v10
 
 - English-only single-page UI.
 - Native flow preserved from the working v8 build.
@@ -33,3 +33,11 @@ The workflow uploads the debug APK as an artifact.
 `TX24(mode, panX, panY, zoomX, zoomY, flags)`
 
 It is not the same as RGB24/TX24 pixel-format conversion mentioned in some native reports.
+
+
+## v10 notes
+
+- App label: IceCam.
+- Fixed daemon/Binder service name: `privsam_service`.
+- Media switching uses safe sequence: TX25 reset -> TX22 range -> TX14 mode/source -> TX11 play -> TX24 transform.
+- Random ServerName generation removed to prevent stale Binder handles after media changes.

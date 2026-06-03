@@ -56,7 +56,7 @@ public class MainActivity extends Activity {
         requestBasicPermissions();
         buildUi();
         logger.setListener(text -> runOnUiThread(() -> { if (logView != null) logView.setText(trimLog(text)); }));
-        logger.log("app", "IceCam v9 report-refined reconstruction started");
+        logger.log("app", "IceCam v10 stable-service reconstruction started");
         logger.log("app", "ServerName=" + root.serverName());
         runBg(() -> { root.bootstrap(); binder.setPreferredService(root.serverName()); refreshAll(); });
     }
@@ -86,8 +86,8 @@ public class MainActivity extends Activity {
 
     private void render() {
         body.removeAllViews();
-        body.addView(title("IceCam v9"));
-        body.addView(text("Report-refined clean-room control layer. Native binaries are kept untouched; this build focuses on stable root bootstrap, media selection, TX24 transform control, and runtime diagnostics.", 13, false, MUTED));
+        body.addView(title("IceCam"));
+        body.addView(text("v10 stable control layer. Fixed service name: privsam_service. Native binaries are kept untouched; this build focuses on reliable media switching, floating controls, and runtime diagnostics.", 13, false, MUTED));
 
         LinearLayout stateCard = card();
         stateCard.addView(section("Status"));
@@ -156,11 +156,11 @@ public class MainActivity extends Activity {
 
         LinearLayout service = card();
         service.addView(section("Service name / Binder"));
-        serviceName = edit(root.serverName(), "ServerName passed to /data/vcplax");
+        serviceName = edit(root.serverName(), "Fixed service name passed to /data/vcplax");
         service.addView(serviceName);
         LinearLayout br = row();
         br.addView(primaryBtn("Save + connect", v -> { saveServiceName(); logger.logBlock("binder", binder.diagnostics()); refreshAll(); }), weight());
-        br.addView(primaryBtn("New name", v -> { String s = root.resetServerName(); binder.setPreferredService(s); render(); }), weight());
+        br.addView(primaryBtn("Reset to privsam_service", v -> { String s = root.resetServerName(); binder.setPreferredService(s); render(); }), weight());
         service.addView(br);
         body.addView(service);
 
@@ -202,12 +202,25 @@ public class MainActivity extends Activity {
     private void playSelected() {
         String p = prefs.getString("PlayFileMp4", "");
         if (p == null || p.length() == 0) { toast("Select media first"); return; }
+        safeApplyMedia(p, "main");
+    }
+
+    private void safeApplyMedia(String p, String source) {
         tx.save(prefs);
-        int mode = binder.setModeString(1, p);
-        int play = binder.playSource(p, tx.mirrorH(), prefs.getBoolean("PlayisLoop", true));
-        int tr = binder.setTransform(tx);
-        logger.log("ui", "play selected TX14=" + mode + " TX11=" + play + " TX24=" + tr + " path=" + p);
-        refreshAll();
+        runBg(() -> {
+            logger.log("ui", "safe media apply start source=" + source + " path=" + p + " service=" + binder.preferredService());
+            int stop = binder.simple(VliveBinderClient.TX_25);
+            sleepMs(180);
+            int range = binder.setRange(0L, -1L);
+            sleepMs(80);
+            int mode = binder.setModeString(1, p);
+            sleepMs(80);
+            int play = binder.playSource(p, tx.mirrorH(), prefs.getBoolean("PlayisLoop", true));
+            sleepMs(120);
+            int tr = binder.setTransform(tx);
+            logger.log("ui", "safe media apply done TX25=" + stop + " TX22=" + range + " TX14=" + mode + " TX11=" + play + " TX24=" + tr + " path=" + p);
+            refreshAll();
+        });
     }
 
     private void stopNative() {
@@ -240,12 +253,11 @@ public class MainActivity extends Activity {
     }
 
     private void saveServiceName() {
-        if (serviceName == null) return;
-        String s = serviceName.getText().toString().trim();
-        if (s.length() == 0) return;
+        String s = RootBootstrap.FIXED_SERVICE_NAME;
         prefs.edit().putString("ServerName", s).apply();
         binder.setPreferredService(s);
-        logger.log("binder", "ServerName=" + s);
+        logger.log("binder", "ServerName=" + s + " (fixed)");
+        if (serviceName != null) serviceName.setText(s);
     }
 
     private void refreshAll() {
@@ -261,7 +273,8 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void runBg(Runnable r) { new Thread(() -> { try { r.run(); } catch (Throwable t) { logger.log("thread", String.valueOf(t)); } }).start(); }
+    private void runBg(Runnable r) { new Thread(() -> { try { r.run(); } catch (Throwable t) { logger.log("thread", String.valueOf(t)); } }, "icecam-bg").start(); }
+    private static void sleepMs(long ms) { try { Thread.sleep(ms); } catch (InterruptedException ignored) {} }
 
     private void shareLog() {
         try {
