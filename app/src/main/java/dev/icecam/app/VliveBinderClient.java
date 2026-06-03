@@ -16,6 +16,8 @@ public final class VliveBinderClient {
     private final AppLogger log;
     private String preferredService = RootBootstrap.FIXED_SERVICE_NAME;
     private String lastError = "not connected";
+    private IBinder cachedBinder = null;
+    private String cachedName = null;
 
     // Only exact recovered/native names. Do not fall back to random Xiaomi services: they accept a different interface token.
     private final List<String> candidates = new ArrayList<>(Arrays.asList(
@@ -27,7 +29,13 @@ public final class VliveBinderClient {
             "MyBinderService"));
 
     public VliveBinderClient(AppLogger logger) { log = logger; }
-    public void setPreferredService(String s) { if (s != null && s.trim().length() > 0) preferredService = s.trim(); }
+    public void setPreferredService(String s) {
+        if (s != null && s.trim().length() > 0) {
+            String n = s.trim();
+            if (!n.equals(preferredService)) { cachedBinder = null; cachedName = null; }
+            preferredService = n;
+        }
+    }
     public String preferredService() { return preferredService; }
     public String lastError() { return lastError; }
 
@@ -52,20 +60,45 @@ public final class VliveBinderClient {
     }
 
     public IBinder service() {
+        // v11: do not re-probe every transaction. The native service may return an empty
+        // descriptor and some probe transactions are stateful. If we already used a live
+        // binder once, keep it until it dies.
+        if (cachedBinder != null && cachedBinder.isBinderAlive()) {
+            preferredService = cachedName != null ? cachedName : preferredService;
+            lastError = "connected cached service=" + preferredService;
+            return cachedBinder;
+        }
+
         ArrayList<String> names = new ArrayList<>();
         names.add(preferredService);
         for (String c : candidates) if (!names.contains(c)) names.add(c);
         for (String name : names) {
             IBinder b = getServiceByName(name);
             if (b == null) continue;
-            if (probeDescriptor(b, name)) {
+
+            // The recovered daemon usually registers with a random/custom service name and
+            // an empty descriptor in servicemanager. Accept exact known daemon names without
+            // descriptor blocking; the interface token is still written for every transact.
+            if (RootBootstrap.FIXED_SERVICE_NAME.equals(name) || "vcplax".equals(name) || name.equals(preferredService)) {
+                cachedBinder = b;
+                cachedName = name;
                 preferredService = name;
-                lastError = "connected service=" + name;
+                lastError = "connected raw service=" + name;
+                log.log("binder", lastError);
+                return b;
+            }
+
+            if (probeDescriptor(b, name)) {
+                cachedBinder = b;
+                cachedName = name;
+                preferredService = name;
+                lastError = "connected probed service=" + name;
+                log.log("binder", lastError);
                 return b;
             }
             log.log("binder", "reject service=" + name + " descriptor/probe mismatch");
         }
-        lastError = "VLive binder not found. /data/vcplax is not publishing " + DESCRIPTOR;
+        lastError = "VLive binder not found. service=" + preferredService + " not available";
         return null;
     }
 

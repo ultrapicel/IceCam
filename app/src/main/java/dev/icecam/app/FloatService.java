@@ -170,17 +170,16 @@ public class FloatService extends Service {
         new Thread(() -> {
             prefs.edit().putString("ServerName", RootBootstrap.FIXED_SERVICE_NAME).apply();
             binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
-            log.log("float", "safe play start path=" + p + " loop=" + loop + " service=" + binder.preferredService());
-            int stop = binder.simple(VliveBinderClient.TX_25);
-            sleepMs(180);
+            log.log("float", "soft play start path=" + p + " loop=" + loop + " service=" + binder.preferredService());
+            // v11 soft-switch: do not TX25 before play, it may close the native endpoint.
             int range = binder.setRange(0L, -1L);
             sleepMs(80);
             int mode = binder.setModeString(1, p);
-            sleepMs(80);
-            int play = binder.playSource(p, tx.mirrorH(), loop);
             sleepMs(120);
+            int play = binder.playSource(p, tx.mirrorH(), loop);
+            sleepMs(180);
             int tr = binder.setTransform(tx);
-            log.log("float", "safe play done TX25=" + stop + " TX22=" + range + " TX14=" + mode + " TX11=" + play + " TX24=" + tr + " path=" + p);
+            log.log("float", "soft play done TX22=" + range + " TX14=" + mode + " TX11=" + play + " TX24=" + tr + " path=" + p);
             refresh();
         }, "icecam-float-play").start();
     }

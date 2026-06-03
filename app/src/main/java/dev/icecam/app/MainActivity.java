@@ -208,17 +208,17 @@ public class MainActivity extends Activity {
     private void safeApplyMedia(String p, String source) {
         tx.save(prefs);
         runBg(() -> {
-            logger.log("ui", "safe media apply start source=" + source + " path=" + p + " service=" + binder.preferredService());
-            int stop = binder.simple(VliveBinderClient.TX_25);
-            sleepMs(180);
+            logger.log("ui", "soft media apply start source=" + source + " path=" + p + " service=" + binder.preferredService());
+            // v11 soft-switch: TX25 can close/reset the native endpoint on some builds.
+            // Do not send it during normal media switching. Keep TX25 only for manual Stop.
             int range = binder.setRange(0L, -1L);
             sleepMs(80);
             int mode = binder.setModeString(1, p);
-            sleepMs(80);
-            int play = binder.playSource(p, tx.mirrorH(), prefs.getBoolean("PlayisLoop", true));
             sleepMs(120);
+            int play = binder.playSource(p, tx.mirrorH(), prefs.getBoolean("PlayisLoop", true));
+            sleepMs(180);
             int tr = binder.setTransform(tx);
-            logger.log("ui", "safe media apply done TX25=" + stop + " TX22=" + range + " TX14=" + mode + " TX11=" + play + " TX24=" + tr + " path=" + p);
+            logger.log("ui", "soft media apply done TX22=" + range + " TX14=" + mode + " TX11=" + play + " TX24=" + tr + " path=" + p);
             refreshAll();
         });
     }
