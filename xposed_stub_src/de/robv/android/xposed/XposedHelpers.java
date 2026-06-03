@@ -1,1 +1,0 @@
-package de.robv.android.xposed; public final class XposedHelpers { public static Class<?> findClass(String n, ClassLoader cl) throws ClassNotFoundException { return Class.forName(n,false,cl); } public static Object findAndHookMethod(String c, ClassLoader cl, String m, Object... args){ return null; } }

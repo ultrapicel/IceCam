@@ -1,16 +1,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA" />
-
-    <application android:theme="@style/AppTheme" android:label="IceCam v9.6.6" android:allowBackup="false" android:usesCleartextTraffic="true">
-        <meta-data android:name="xposedmodule" android:value="true" />
-        <meta-data android:name="xposeddescription" android:value="IceCam camera hook layer" />
-        <meta-data android:name="xposedminversion" android:value="93" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <application android:name=".IceCamApp" android:theme="@style/AppTheme" android:label="IceCam MaxRecon" android:extractNativeLibs="true" android:resizeableActivity="true">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <provider android:name=".IceCamStateProvider" android:authorities="com.icecam.dev.provider" android:exported="true" android:grantUriPermissions="false" />
+        <service android:name=".FloatService" android:exported="false" />
+        <service android:name=".MediaProjectionForegroundService" android:exported="false" android:foregroundServiceType="mediaProjection" />
     </application>
 </manifest>

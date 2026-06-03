@@ -1,18 +1,19 @@
 plugins { id 'com.android.application' }
 
 android {
-    namespace 'com.icecam.dev'
+    namespace 'dev.icecam.app'
     compileSdk 35
-
     defaultConfig {
-        applicationId 'com.icecam.dev'
-        minSdk 31
+        applicationId 'dev.icecam.app'
+        minSdk 23
         targetSdk 35
-        versionCode 966
-        versionName '9.6.6-sticky-preview-renderer'
+        versionCode 9
+        versionName '0.9-v8-tx24-transform-reconstruction'
     }
-}
-
-dependencies {
-    compileOnly files('libs/xposed-api-stub.jar')
+    buildTypes {
+        debug { debuggable true; minifyEnabled false }
+        release { minifyEnabled false }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    packaging { jniLibs { useLegacyPackaging true } }
 }
