@@ -22,9 +22,9 @@ import android.widget.Toast;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class FloatService extends Service {
-    private static final long QUIET_TRANSFORM_MS = 1400L;
-    private static final long POST_REPLAY_COOLDOWN_MS = 650L;
-    private static final boolean AUTO_APPLY_TRANSFORMS = false;
+    private static final long QUIET_TRANSFORM_MS = 850L;
+    private static final long POST_REPLAY_COOLDOWN_MS = 450L;
+    private static final boolean AUTO_APPLY_TRANSFORMS = true;
 
     private WindowManager wm;
     private View panel;
@@ -86,7 +86,7 @@ public class FloatService extends Service {
         panel = buildPanel();
         wm.addView(panel, lp);
         refresh();
-        log.log("float", "v20 diagnostic floating controls started autoApply=" + AUTO_APPLY_TRANSFORMS);
+        log.log("float", "v21 stable-canvas floating controls started autoApply=" + AUTO_APPLY_TRANSFORMS);
     }
 
     private View buildPanel() {
@@ -132,7 +132,7 @@ public class FloatService extends Service {
         LinearLayout r4 = row();
         r4.addView(btn("Rotate", v -> mutate("rotate")), weight());
         r4.addView(btn("Mirror", v -> mutate("mirror")), weight());
-        r4.addView(btn("Apply", v -> forceApply()), weight());
+        r4.addView(btn("Force", v -> forceApply()), weight());
         box.addView(r4);
 
         LinearLayout r5 = row();
@@ -173,7 +173,7 @@ public class FloatService extends Service {
             case "mirror": s.toggleMirrorH(); break;
         }
         s.save(prefs);
-        log.log("float", "transform state-only " + op + " " + s.summary() + " autoApply=" + AUTO_APPLY_TRANSFORMS);
+        log.log("float", "transform state-updated " + op + " " + s.summary() + " autoApply=" + AUTO_APPLY_TRANSFORMS);
         prefs.edit().putString("IceCamState", "FLOAT_TRANSFORM_DIRTY").apply();
         if (AUTO_APPLY_TRANSFORMS) scheduleBake(op);
         refresh();

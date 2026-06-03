@@ -7,6 +7,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Paint;
+import android.content.SharedPreferences;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.Arrays;
@@ -16,7 +17,8 @@ import java.util.Locale;
 public final class MediaTransformer {
     private MediaTransformer() {}
     private static final int MAX_OUTPUT_DIM = 2560;
-    private static final int MAX_BAKED_FILES = 24;
+    private static final int JPEG_QUALITY = 88;
+    private static final int MAX_BAKED_FILES = 12;
     private static final long MAX_BAKED_AGE_MS = 6L * 60L * 60L * 1000L;
 
     public static boolean isImagePath(String path) {
@@ -63,11 +65,9 @@ public final class MediaTransformer {
 
             int srcW = src.getWidth();
             int srcH = src.getHeight();
-            boolean swap = (s.rotationQuadrant() & 1) != 0;
-            int outW = swap ? srcH : srcW;
-            int outH = swap ? srcW : srcH;
-            outW = Math.max(16, outW);
-            outH = Math.max(16, outH);
+            int[] fixed = resolveStableOutputSize(ctx, sourcePath, srcW0, srcH0, s, log);
+            int outW = fixed[0];
+            int outH = fixed[1];
 
             Bitmap out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888);
             Canvas c = new Canvas(out);
@@ -100,19 +100,56 @@ public final class MediaTransformer {
             pruneBakedCache(dir, log);
             File dst = new File(dir, String.format(Locale.US, "icecam_%dx%d_%d.jpg", outW, outH, System.currentTimeMillis()));
             FileOutputStream fos = new FileOutputStream(dst);
-            out.compress(Bitmap.CompressFormat.JPEG, 100, fos);
+            out.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, fos);
             fos.flush();
             fos.close();
             src.recycle();
             out.recycle();
             pruneBakedCache(dir, log);
-            if (log != null) log.log("bake", "image baked high-quality " + outW + "x" + outH + " " + s.summary() + " -> " + dst.getAbsolutePath());
+            if (log != null) log.log("bake", "image baked stable-canvas q=" + JPEG_QUALITY + " " + outW + "x" + outH + " src=" + srcW0 + "x" + srcH0 + " decoded=" + srcW + "x" + srcH + " " + s.summary() + " -> " + dst.getAbsolutePath());
             return dst.getAbsolutePath();
         } catch (Throwable t) {
             if (log != null) log.log("bake", "failed: " + t.getClass().getSimpleName() + ": " + t.getMessage());
             return sourcePath;
         }
     }
+    private static int[] resolveStableOutputSize(Context ctx, String sourcePath, int srcW, int srcH, TransformState s, AppLogger log) {
+        SharedPreferences prefs = ctx.getSharedPreferences("app_config", Context.MODE_PRIVATE);
+        int w = prefs.getInt("StableOutputWidth", 0);
+        int h = prefs.getInt("StableOutputHeight", 0);
+        if (w >= 16 && h >= 16) return new int[]{w, h};
+
+        String baked = prefs.getString("BakedPlayFileMp4", "");
+        int[] fromBaked = probeImageSize(baked);
+        if (fromBaked[0] >= 16 && fromBaked[1] >= 16) {
+            w = fromBaked[0];
+            h = fromBaked[1];
+        } else {
+            int playAngle = prefs.getInt("PlayAngle", s.rotationQuadrant() * 90);
+            boolean initialSwap = Math.abs(playAngle / 90) % 2 == 1;
+            w = initialSwap ? srcH : srcW;
+            h = initialSwap ? srcW : srcH;
+        }
+
+        w = Math.max(16, w);
+        h = Math.max(16, h);
+        prefs.edit().putInt("StableOutputWidth", w).putInt("StableOutputHeight", h).apply();
+        if (log != null) log.log("bake", "stable output canvas locked " + w + "x" + h + " source=" + sourcePath);
+        return new int[]{w, h};
+    }
+
+    private static int[] probeImageSize(String path) {
+        if (path == null || path.trim().isEmpty()) return new int[]{0, 0};
+        try {
+            BitmapFactory.Options probe = new BitmapFactory.Options();
+            probe.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(path, probe);
+            return new int[]{probe.outWidth, probe.outHeight};
+        } catch (Throwable ignored) {
+            return new int[]{0, 0};
+        }
+    }
+
     private static void pruneBakedCache(File dir, AppLogger log) {
         try {
             File[] files = dir.listFiles((d, name) -> name != null && name.startsWith("icecam_") && name.toLowerCase(Locale.US).endsWith(".jpg"));

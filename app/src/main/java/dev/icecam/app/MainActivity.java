@@ -34,10 +34,10 @@ public class MainActivity extends Activity {
     private static final int RED = 0xffff5e73;
     private static final int TEXT = 0xffedf3ff;
     private static final int MUTED = 0xffaab5c8;
-    private static final long QUIET_TRANSFORM_MS = 1400L;
-    private static final long POST_REPLAY_COOLDOWN_MS = 650L;
+    private static final long QUIET_TRANSFORM_MS = 850L;
+    private static final long POST_REPLAY_COOLDOWN_MS = 450L;
     // v20 safe mode: transform buttons update state only. Backend replay is explicit via Apply now.
-    private static final boolean AUTO_APPLY_TRANSFORMS = false;
+    private static final boolean AUTO_APPLY_TRANSFORMS = true;
 
     private AppLogger logger;
     private RootBootstrap root;
@@ -71,7 +71,7 @@ public class MainActivity extends Activity {
         binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
         requestBasicPermissions();
         buildUi();
-        logger.log("app", "IceCam Core v20 diagnostic safe-transform started autoApply=" + AUTO_APPLY_TRANSFORMS);
+        logger.log("app", "IceCam Core v21 stable-canvas safe-transform started autoApply=" + AUTO_APPLY_TRANSFORMS);
         runBg(() -> { root.bootstrap(); binder.clearCache(); binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME); refreshAll(); });
     }
 
@@ -154,7 +154,7 @@ public class MainActivity extends Activity {
         transformLabel = text("", 12, false, TEXT);
         transformLabel.setTextIsSelectable(true);
         controls.addView(transformLabel);
-        controls.addView(text("v20 safe mode: buttons update TransformState only. Use Apply now to bake/replay one final frame. This avoids breaking the native stream on every tap.", 11, false, MUTED));
+        controls.addView(text("v21: controls auto-apply after a short quiet window. Output canvas size stays locked for the session, so rotate/zoom should not force camera consumer resolution changes.", 11, false, MUTED));
 
         LinearLayout c1 = row();
         c1.addView(primaryBtn("Zoom +", v -> { tx.zoom(1.12f); applyTransform("zoom+"); }, PRIMARY), weight());
@@ -180,7 +180,7 @@ public class MainActivity extends Activity {
         c4.addView(primaryBtn("Reset", v -> { tx.reset(); applyTransform("reset"); }, PRIMARY), weight());
         controls.addView(c4);
         LinearLayout c5 = row();
-        c5.addView(primaryBtn("Apply now", v -> forceApplyTransform("manual-apply"), CYAN), weight());
+        c5.addView(primaryBtn("Apply force", v -> forceApplyTransform("manual-apply"), CYAN), weight());
         c5.addView(primaryBtn("Open floating controls", v -> startFloatPanel(), CYAN), weight());
         controls.addView(c5);
         body.addView(controls);
@@ -305,7 +305,7 @@ public class MainActivity extends Activity {
     private void applyTransform(String reason) {
         tx.save(prefs);
         prefs.edit().putString("IceCamState", "TRANSFORM_DIRTY").apply();
-        logger.log("transform", reason + " state-only " + tx.summary() + " autoApply=" + AUTO_APPLY_TRANSFORMS);
+        logger.log("transform", reason + " state-updated " + tx.summary() + " autoApply=" + AUTO_APPLY_TRANSFORMS);
         refreshAll();
         String original = prefs.getString("OriginalPlayFileMp4", prefs.getString("PlayFileMp4", ""));
         if (original == null || original.length() == 0) return;
