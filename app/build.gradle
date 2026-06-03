@@ -7,8 +7,8 @@ android {
         applicationId 'dev.icecam.app'
         minSdk 23
         targetSdk 35
-        versionCode 20
-        versionName '0.20-v20-diagnostic-safe-transform'
+        versionCode 22
+        versionName '0.22-v22-unified-floating-control-plane'
     }
     buildTypes {
         debug { debuggable true; minifyEnabled false }

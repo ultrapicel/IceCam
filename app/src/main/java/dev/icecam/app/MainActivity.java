@@ -34,14 +34,12 @@ public class MainActivity extends Activity {
     private static final int RED = 0xffff5e73;
     private static final int TEXT = 0xffedf3ff;
     private static final int MUTED = 0xffaab5c8;
-    private static final long QUIET_TRANSFORM_MS = 850L;
-    private static final long POST_REPLAY_COOLDOWN_MS = 450L;
-    // v20 safe mode: transform buttons update state only. Backend replay is explicit via Apply now.
-    private static final boolean AUTO_APPLY_TRANSFORMS = true;
+    private static final boolean MAIN_AUTO_COMMIT = true;
 
     private AppLogger logger;
     private RootBootstrap root;
     private VliveBinderClient binder;
+    private TransformController controller;
     private SharedPreferences prefs;
     private TransformState tx;
 
@@ -61,6 +59,7 @@ public class MainActivity extends Activity {
         logger = new AppLogger(this);
         root = new RootBootstrap(this, logger);
         binder = new VliveBinderClient(logger);
+        controller = TransformController.get(this);
         prefs = getSharedPreferences("app_config", MODE_PRIVATE);
         prefs.edit()
                 .putString("ServerName", RootBootstrap.FIXED_SERVICE_NAME)
@@ -71,7 +70,7 @@ public class MainActivity extends Activity {
         binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
         requestBasicPermissions();
         buildUi();
-        logger.log("app", "IceCam Core v21 stable-canvas safe-transform started autoApply=" + AUTO_APPLY_TRANSFORMS);
+        logger.log("app", "IceCam Core v22 unified transform controller started mainAutoCommit=" + MAIN_AUTO_COMMIT);
         runBg(() -> { root.bootstrap(); binder.clearCache(); binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME); refreshAll(); });
     }
 
@@ -101,7 +100,7 @@ public class MainActivity extends Activity {
     private void render() {
         body.removeAllViews();
         body.addView(title("IceCam"));
-        body.addView(text("Diagnostic safe-transform controller", 13, false, MUTED));
+        body.addView(text("v22 unified transform controller: MainActivity and floating overlay route through the same TransformController/BackendApplyQueue.", 13, false, MUTED));
 
         LinearLayout stateCard = card();
         stateCard.addView(section("Status"));
@@ -154,7 +153,7 @@ public class MainActivity extends Activity {
         transformLabel = text("", 12, false, TEXT);
         transformLabel.setTextIsSelectable(true);
         controls.addView(transformLabel);
-        controls.addView(text("v21: controls auto-apply after a short quiet window. Output canvas size stays locked for the session, so rotate/zoom should not force camera consumer resolution changes.", 11, false, MUTED));
+        controls.addView(text("v22: floating controls no longer own Binder/TX/bake. They send commands to the same controller used by these buttons.", 11, false, MUTED));
 
         LinearLayout c1 = row();
         c1.addView(primaryBtn("Zoom +", v -> { tx.zoom(1.12f); applyTransform("zoom+"); }, PRIMARY), weight());
@@ -180,7 +179,7 @@ public class MainActivity extends Activity {
         c4.addView(primaryBtn("Reset", v -> { tx.reset(); applyTransform("reset"); }, PRIMARY), weight());
         controls.addView(c4);
         LinearLayout c5 = row();
-        c5.addView(primaryBtn("Apply force", v -> forceApplyTransform("manual-apply"), CYAN), weight());
+        c5.addView(primaryBtn("Commit / Apply", v -> forceApplyTransform("manual-apply"), CYAN), weight());
         c5.addView(primaryBtn("Open floating controls", v -> startFloatPanel(), CYAN), weight());
         controls.addView(c5);
         body.addView(controls);
@@ -247,23 +246,8 @@ public class MainActivity extends Activity {
     private void startReplacement() {
         String p = prefs.getString("PlayFileMp4", "");
         if (p == null || p.length() == 0) { toast("Select media first"); return; }
-        if (!actionBusy.compareAndSet(false, true)) { logger.log("ui", "start queued/ignored: backend busy"); return; }
-        runBg(() -> {
-            try {
-                prefs.edit().putString("IceCamState", "STARTING").apply();
-                binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
-                if (!binder.connected()) {
-                    root.bootstrap();
-                    binder.clearCache();
-                    binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
-                    sleepMs(350);
-                }
-                requestBackendApply(p, "start/replay", true);
-            } finally {
-                actionBusy.set(false);
-                refreshAll();
-            }
-        });
+        controller.startReplacement(TransformController.Source.MAIN);
+        refreshAll();
     }
 
     private void requestBackendApply(String path, String source, boolean force) {
@@ -303,82 +287,19 @@ public class MainActivity extends Activity {
     }
 
     private void applyTransform(String reason) {
-        tx.save(prefs);
-        prefs.edit().putString("IceCamState", "TRANSFORM_DIRTY").apply();
-        logger.log("transform", reason + " state-updated " + tx.summary() + " autoApply=" + AUTO_APPLY_TRANSFORMS);
+        controller.updateState(TransformController.Source.MAIN, reason, tx, MAIN_AUTO_COMMIT);
         refreshAll();
-        String original = prefs.getString("OriginalPlayFileMp4", prefs.getString("PlayFileMp4", ""));
-        if (original == null || original.length() == 0) return;
-        if (!MediaTransformer.isImagePath(original)) {
-            logger.log("transform", reason + " saved for video; realtime video transform is pending GPU renderer. " + tx.summary());
-            return;
-        }
-        if (AUTO_APPLY_TRANSFORMS) scheduleImageBake(reason);
     }
 
     private void forceApplyTransform(String reason) {
         tx.save(prefs);
-        transformPending = false;
-        logger.log("transform", reason + " explicit bake/replay requested " + tx.summary());
-        scheduleImageBake(reason + "-force");
-    }
-
-    private void scheduleImageBake(String reason) {
-        pendingReason = reason;
-        transformPending = true;
-        if (!transformWorker.compareAndSet(false, true)) {
-            logger.log("transform", "coalesced latest transform: " + reason);
-            return;
-        }
-        runBg(() -> {
-            try {
-                while (true) {
-                    transformPending = false;
-                    String r = pendingReason;
-                    prefs.edit().putString("IceCamState", "WAITING_FOR_STABLE_TRANSFORM").apply();
-                    sleepMs(QUIET_TRANSFORM_MS);
-                    if (transformPending) {
-                        logger.log("transform", "waiting for quiet window; latest=" + pendingReason);
-                        continue;
-                    }
-                    TransformState snapshot = TransformState.load(prefs);
-                    String original = prefs.getString("OriginalPlayFileMp4", prefs.getString("PlayFileMp4", ""));
-                    if (original == null || original.length() == 0 || !MediaTransformer.isImagePath(original)) break;
-                    prefs.edit().putString("IceCamState", "RENDERING_FRAME").apply();
-                    String baked = MediaTransformer.bakeImage(this, original, snapshot, logger);
-                    prefs.edit().putString("PlayFileMp4", baked).putString("BakedPlayFileMp4", baked).apply();
-                    logger.log("transform", r + " baked/replay explicit=" + (!AUTO_APPLY_TRANSFORMS) + " " + snapshot.summary());
-                    requestBackendApply(baked, "transform-" + r, prefs.getBoolean("ReplacementActive", false));
-                    sleepMs(POST_REPLAY_COOLDOWN_MS);
-                    if (!transformPending) break;
-                }
-            } finally {
-                transformWorker.set(false);
-                refreshAll();
-                if (transformPending) scheduleImageBake("coalesced-after-worker");
-            }
-        });
+        controller.commit(TransformController.Source.MAIN, reason);
+        refreshAll();
     }
 
     private void restoreCamera() {
-        if (!actionBusy.compareAndSet(false, true)) { logger.log("ui", "restore ignored: backend busy"); return; }
-        runBg(() -> {
-            synchronized (backendLock) {
-                try {
-                    prefs.edit().putString("IceCamState", "RESTORING_CAMERA").apply();
-                    logger.log("ui", "restore camera requested");
-                    root.restoreCamera();
-                    binder.clearCache();
-                    sleepMs(350);
-                    boolean stillConnected = binder.connected();
-                    prefs.edit().putBoolean("ReplacementActive", false).putString("IceCamState", stillConnected ? "RESTORE_CHECK_SERVICE_STILL_VISIBLE" : "CAMERA_RESTORED").apply();
-                    logger.log("ui", "restore camera done serviceStillVisible=" + stillConnected + " " + binder.lastError());
-                } finally {
-                    actionBusy.set(false);
-                    refreshAll();
-                }
-            }
-        });
+        controller.restoreCamera(TransformController.Source.MAIN);
+        refreshAll();
     }
 
     private void startFloatPanel() {
@@ -419,7 +340,7 @@ public class MainActivity extends Activity {
                 String p = prefs.getString("PlayFileMp4", "");
                 mediaLabel.setText(p == null || p.length() == 0 ? "No active media" : "Active M" + activeSlot + ": " + shortPath(p));
             }
-            if (transformLabel != null) transformLabel.setText(tx.summary() + (transformWorker.get() ? "\nRendering/applying explicit frame…" : "\nDirty state: use Apply now to update backend."));
+            if (transformLabel != null) transformLabel.setText(tx.summary() + (controller.isRendering() ? "\nRendering/applying via TransformController…" : "\nUnified controller ready. Floating overlay is state-only until Commit."));
         });
     }
 

@@ -19,29 +19,19 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public class FloatService extends Service {
-    private static final long QUIET_TRANSFORM_MS = 850L;
-    private static final long POST_REPLAY_COOLDOWN_MS = 450L;
-    private static final boolean AUTO_APPLY_TRANSFORMS = true;
+    private static final boolean FLOAT_AUTO_COMMIT = false;
 
     private WindowManager wm;
     private View panel;
     private WindowManager.LayoutParams lp;
     private SharedPreferences prefs;
     private AppLogger log;
-    private VliveBinderClient binder;
-    private RootBootstrap root;
+    private TransformController controller;
     private TextView state;
     private int lastX, lastY;
     private float touchX, touchY;
-
-    private final Object backendLock = new Object();
-    private final AtomicBoolean busy = new AtomicBoolean(false);
-    private final AtomicBoolean transformWorker = new AtomicBoolean(false);
-    private volatile boolean transformPending = false;
-    private volatile String pendingReason = "float";
 
     @Override public IBinder onBind(Intent i){ return null; }
 
@@ -49,9 +39,7 @@ public class FloatService extends Service {
         super.onCreate();
         prefs = getSharedPreferences("app_config", MODE_PRIVATE);
         log = new AppLogger(this);
-        root = new RootBootstrap(this, log);
-        binder = new VliveBinderClient(log);
-        binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
+        controller = TransformController.get(this);
     }
 
     @Override public int onStartCommand(Intent i, int flags, int startId) {
@@ -86,7 +74,7 @@ public class FloatService extends Service {
         panel = buildPanel();
         wm.addView(panel, lp);
         refresh();
-        log.log("float", "v21 stable-canvas floating controls started autoApply=" + AUTO_APPLY_TRANSFORMS);
+        log.log("float", "v22 command-bus floating controls started autoCommit=" + FLOAT_AUTO_COMMIT);
     }
 
     private View buildPanel() {
@@ -96,7 +84,7 @@ public class FloatService extends Service {
         box.setBackground(bg(0xee151b28, dp(26), 0x66ffffff));
         box.setOnTouchListener((v, e) -> drag(e));
 
-        TextView title = tv("IceCam Controls", 15, true);
+        TextView title = tv("IceCam Remote", 15, true);
         title.setGravity(Gravity.CENTER);
         title.setOnTouchListener((v, e) -> drag(e));
         box.addView(title, new LinearLayout.LayoutParams(-1, dp(30)));
@@ -107,8 +95,8 @@ public class FloatService extends Service {
         box.addView(state);
 
         LinearLayout r0 = row();
-        r0.addView(btn("Start", v -> playFile()), weight());
-        r0.addView(btn("Restore", v -> restoreCamera()), weight());
+        r0.addView(btn("Start", v -> { controller.startReplacement(TransformController.Source.FLOAT); refreshDelayed(); }), weight());
+        r0.addView(btn("Restore", v -> { controller.restoreCamera(TransformController.Source.FLOAT); refreshDelayed(); }), weight());
         box.addView(r0);
 
         LinearLayout r1 = row();
@@ -132,7 +120,7 @@ public class FloatService extends Service {
         LinearLayout r4 = row();
         r4.addView(btn("Rotate", v -> mutate("rotate")), weight());
         r4.addView(btn("Mirror", v -> mutate("mirror")), weight());
-        r4.addView(btn("Force", v -> forceApply()), weight());
+        r4.addView(btn("Commit", v -> commit()), weight());
         box.addView(r4);
 
         LinearLayout r5 = row();
@@ -158,135 +146,15 @@ public class FloatService extends Service {
     }
 
     private void mutate(String op) {
-        TransformState s = TransformState.load(prefs);
-        switch (op) {
-            case "zoom+": s.zoom(1.12f); break;
-            case "zoom-": s.zoom(1f / 1.12f); break;
-            case "up": s.move(0f, 0.04f); break;
-            case "down": s.move(0f, -0.04f); break;
-            case "left": s.move(-0.04f, 0f); break;
-            case "right": s.move(0.04f, 0f); break;
-            case "center": s.center(); break;
-            case "fit-fill": s.toggleFitFill(); break;
-            case "crop": s.cycleCrop(); break;
-            case "rotate": s.rotate90(); break;
-            case "mirror": s.toggleMirrorH(); break;
-        }
-        s.save(prefs);
-        log.log("float", "transform state-updated " + op + " " + s.summary() + " autoApply=" + AUTO_APPLY_TRANSFORMS);
-        prefs.edit().putString("IceCamState", "FLOAT_TRANSFORM_DIRTY").apply();
-        if (AUTO_APPLY_TRANSFORMS) scheduleBake(op);
+        TransformState s = controller.mutate(TransformController.Source.FLOAT, op, FLOAT_AUTO_COMMIT);
+        log.log("float", "command source=FLOAT op=" + op + " routed=TransformController autoCommit=" + FLOAT_AUTO_COMMIT + " " + s.summary());
         refresh();
     }
 
-    private void forceApply() {
-        transformPending = false;
-        log.log("float", "manual explicit bake/replay requested");
-        scheduleBake("manual-apply");
-    }
-
-    private void scheduleBake(String reason) {
-        pendingReason = reason;
-        transformPending = true;
-        if (!transformWorker.compareAndSet(false, true)) {
-            log.log("float", "coalesced latest transform: " + reason);
-            return;
-        }
-        new Thread(() -> {
-            try {
-                while (true) {
-                    transformPending = false;
-                    String r = pendingReason;
-                    prefs.edit().putString("IceCamState", "FLOAT_WAITING_FOR_STABLE_TRANSFORM").apply();
-                    sleepMs(QUIET_TRANSFORM_MS);
-                    if (transformPending) continue;
-                    TransformState snapshot = TransformState.load(prefs);
-                    String original = prefs.getString("OriginalPlayFileMp4", prefs.getString("PlayFileMp4", ""));
-                    if (original == null || original.length() == 0) break;
-                    if (!MediaTransformer.isImagePath(original)) {
-                        log.log("float", r + " saved for video; no baked replay");
-                        break;
-                    }
-                    prefs.edit().putString("IceCamState", "FLOAT_RENDERING_FRAME").apply();
-                    String baked = MediaTransformer.bakeImage(this, original, snapshot, log);
-                    prefs.edit().putString("PlayFileMp4", baked).putString("BakedPlayFileMp4", baked).apply();
-                    requestApply(baked, "float-transform-" + r, prefs.getBoolean("ReplacementActive", false));
-                    sleepMs(POST_REPLAY_COOLDOWN_MS);
-                    if (!transformPending) break;
-                }
-            } finally {
-                transformWorker.set(false);
-                if (transformPending) scheduleBake("float-coalesced-after-worker");
-                refresh();
-            }
-        }, "icecam-float-transform").start();
-    }
-
-    private void playFile() {
-        String p = prefs.getString("PlayFileMp4", "");
-        if (p == null || p.trim().isEmpty()) { toast("Select media in main app first"); return; }
-        if (!busy.compareAndSet(false, true)) return;
-        new Thread(() -> {
-            try {
-                prefs.edit().putString("IceCamState", "STARTING").apply();
-                binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
-                if (!binder.connected()) {
-                    root.bootstrap();
-                    binder.clearCache();
-                    binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
-                    sleepMs(350);
-                }
-                requestApply(p, "float-start", true);
-            } finally { busy.set(false); refresh(); }
-        }, "icecam-float-start").start();
-    }
-
-    private void requestApply(String path, String source, boolean force) {
-        BackendApplyQueue.get(this).enqueue(path, source, force);
-        refresh();
-    }
-
-    private boolean replayOnce(String p, String source) {
-        synchronized (backendLock) {
-            try {
-                prefs.edit().putString("IceCamState", "FLOAT_APPLYING_MEDIA").apply();
-                log.log("float", "replay start source=" + source + " path=" + p);
-                binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
-                if (!binder.connected()) { binder.clearCache(); sleepMs(250); }
-                int mode = binder.setModeString(1, p);
-                sleepMs(520);
-                TransformState tx = TransformState.load(prefs);
-                int play = binder.playSource(p, tx.mirrorH(), prefs.getBoolean("PlayisLoop", true));
-                boolean active = mode >= 0 && play >= 0;
-                prefs.edit().putBoolean("ReplacementActive", active).putString("IceCamState", active ? "REPLACEMENT_ACTIVE" : "PLAY_ERROR").apply();
-                log.log("float", "replay done TX14=" + mode + " TX11=" + play + " active=" + active);
-                if (!active) binder.clearCache();
-                return active;
-            } catch (Throwable t) {
-                prefs.edit().putBoolean("ReplacementActive", false).putString("IceCamState", "PLAY_ERROR").apply();
-                binder.clearCache();
-                log.log("float", "replay exception: " + t);
-                return false;
-            }
-        }
-    }
-
-    private void restoreCamera() {
-        if (!busy.compareAndSet(false, true)) return;
-        new Thread(() -> {
-            synchronized (backendLock) {
-                try {
-                    prefs.edit().putString("IceCamState", "RESTORING_CAMERA").apply();
-                    log.log("float", "restore camera requested");
-                    root.restoreCamera();
-                    binder.clearCache();
-                    sleepMs(350);
-                    boolean stillConnected = binder.connected();
-                    prefs.edit().putBoolean("ReplacementActive", false).putString("IceCamState", stillConnected ? "RESTORE_CHECK_SERVICE_STILL_VISIBLE" : "CAMERA_RESTORED").apply();
-                    log.log("float", "restore done serviceStillVisible=" + stillConnected);
-                } finally { busy.set(false); refresh(); }
-            }
-        }, "icecam-float-restore").start();
+    private void commit() {
+        log.log("float", "commit routed to TransformController; no direct Binder/TX in FloatService");
+        controller.commit(TransformController.Source.FLOAT, "float-commit");
+        refreshDelayed();
     }
 
     private void openApp() {
@@ -295,16 +163,21 @@ public class FloatService extends Service {
         startActivity(it);
     }
 
+    private void refreshDelayed() {
+        refresh();
+        if (state != null) state.postDelayed(this::refresh, 700);
+        if (state != null) state.postDelayed(this::refresh, 1700);
+    }
+
     private void refresh() {
         if (state == null) return;
         boolean active = prefs.getBoolean("ReplacementActive", false);
         String phase = prefs.getString("IceCamState", "IDLE");
         TransformState s = TransformState.load(prefs);
-        state.setText((active ? "ON" : "OFF") + " · " + phase + "\n" + s.modeName() + " z=" + String.format(java.util.Locale.US, "%.2f", s.zoomX) + " pan=" + String.format(java.util.Locale.US, "%.2f,%.2f", s.panX, s.panY));
+        state.setText((active ? "ON" : "OFF") + " · " + phase + "\n" + s.modeName() + " z=" + String.format(java.util.Locale.US, "%.2f", s.zoomX) + " pan=" + String.format(java.util.Locale.US, "%.2f,%.2f", s.panX, s.panY) + "\nFLOAT: state-only · Commit uses app controller");
         state.setTextColor(active ? 0xff62ff91 : 0xffdbe7f4);
     }
 
-    private static void sleepMs(long ms) { try { Thread.sleep(ms); } catch (InterruptedException ignored) {} }
     private Button btn(String s, View.OnClickListener l) {
         Button b = new Button(this);
         b.setText(s); b.setAllCaps(false); b.setTextSize(10); b.setTextColor(Color.WHITE); b.setTypeface(Typeface.DEFAULT_BOLD);
