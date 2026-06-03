@@ -13,6 +13,7 @@ import java.util.Locale;
 
 public final class MediaTransformer {
     private MediaTransformer() {}
+    private static final int MAX_OUTPUT_DIM = 2560;
 
     public static boolean isImagePath(String path) {
         if (path == null) return false;
@@ -40,11 +41,15 @@ public final class MediaTransformer {
                 if (log != null) log.log("bake", "decode bounds failed source=" + sourcePath);
                 return sourcePath;
             }
+
+            int srcW0 = probe.outWidth;
+            int srcH0 = probe.outHeight;
+            int sample = 1;
+            while (Math.max(srcW0 / sample, srcH0 / sample) > MAX_OUTPUT_DIM) sample *= 2;
+
             BitmapFactory.Options opt = new BitmapFactory.Options();
             opt.inPreferredConfig = Bitmap.Config.ARGB_8888;
-            int maxDim = Math.max(probe.outWidth, probe.outHeight);
-            int sample = 1;
-            while (maxDim / sample > 1920) sample *= 2;
+            opt.inDither = true;
             opt.inSampleSize = sample;
             Bitmap src = BitmapFactory.decodeFile(sourcePath, opt);
             if (src == null) {
@@ -52,10 +57,14 @@ public final class MediaTransformer {
                 return sourcePath;
             }
 
-            int outW = 640;
-            int outH = 480;
-            // Keep camera-client compatibility: original native often reports 640x480. For portrait sources,
-            // we still bake into 640x480 and use fit/fill/crop inside this canvas.
+            int srcW = src.getWidth();
+            int srcH = src.getHeight();
+            boolean swap = (s.rotationQuadrant() & 1) != 0;
+            int outW = swap ? srcH : srcW;
+            int outH = swap ? srcW : srcH;
+            outW = Math.max(16, outW);
+            outH = Math.max(16, outH);
+
             Bitmap out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888);
             Canvas c = new Canvas(out);
             c.drawColor(Color.BLACK);
@@ -64,22 +73,19 @@ public final class MediaTransformer {
             float sh = src.getHeight();
             float base;
             if (s.mode == TransformState.MODE_FILL) base = Math.max(outW / sw, outH / sh);
-            else if (s.mode == TransformState.MODE_STRETCH) base = 1f; // handled below
+            else if (s.mode == TransformState.MODE_STRETCH) base = 1f;
             else base = Math.min(outW / sw, outH / sh);
 
             Matrix m = new Matrix();
-            float cx = sw / 2f;
-            float cy = sh / 2f;
-            m.postTranslate(-cx, -cy);
+            m.postTranslate(-sw / 2f, -sh / 2f);
             if (s.mirrorH()) m.postScale(-1f, 1f);
             if (s.mirrorV()) m.postScale(1f, -1f);
             m.postRotate(s.rotationQuadrant() * 90f);
             if (s.mode == TransformState.MODE_STRETCH) {
-                m.postScale(outW / sw * s.zoomX, outH / sh * s.zoomY);
+                m.postScale((outW / sw) * s.zoomX, (outH / sh) * s.zoomY);
             } else {
                 m.postScale(base * s.zoomX, base * s.zoomY);
             }
-            // panX/panY are normalized: 1.0 means one half output extent.
             m.postTranslate(outW / 2f + s.panX * (outW / 2f), outH / 2f - s.panY * (outH / 2f));
 
             Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
@@ -87,14 +93,14 @@ public final class MediaTransformer {
 
             File dir = new File(ctx.getExternalFilesDir(null), "baked");
             if (!dir.exists()) dir.mkdirs();
-            File dst = new File(dir, String.format(Locale.US, "icecam_baked_%d.jpg", System.currentTimeMillis()));
+            File dst = new File(dir, String.format(Locale.US, "icecam_%dx%d_%d.jpg", outW, outH, System.currentTimeMillis()));
             FileOutputStream fos = new FileOutputStream(dst);
-            out.compress(Bitmap.CompressFormat.JPEG, 95, fos);
+            out.compress(Bitmap.CompressFormat.JPEG, 100, fos);
             fos.flush();
             fos.close();
             src.recycle();
             out.recycle();
-            if (log != null) log.log("bake", "image baked " + s.summary() + " -> " + dst.getAbsolutePath());
+            if (log != null) log.log("bake", "image baked high-quality " + outW + "x" + outH + " " + s.summary() + " -> " + dst.getAbsolutePath());
             return dst.getAbsolutePath();
         } catch (Throwable t) {
             if (log != null) log.log("bake", "failed: " + t.getClass().getSimpleName() + ": " + t.getMessage());

@@ -15,22 +15,20 @@ import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
-import android.widget.CheckBox;
-import android.widget.CompoundButton;
-import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
-import java.io.File;
 import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MainActivity extends Activity {
     private static final int REQ_PICK = 7101;
     private static final int BG = 0xff0f141f;
     private static final int CARD = 0xff182130;
-    private static final int CARD_2 = 0xff202b3c;
     private static final int PRIMARY = 0xff7f94ff;
+    private static final int GREEN = 0xff2bd889;
+    private static final int RED = 0xffff5e73;
     private static final int TEXT = 0xffedf3ff;
     private static final int MUTED = 0xffaab5c8;
 
@@ -41,9 +39,13 @@ public class MainActivity extends Activity {
     private TransformState tx;
 
     private LinearLayout body;
-    private TextView status, logView, mediaLabel, transformLabel;
-    private EditText serviceName;
-    private CheckBox loop, mirror, autoRotate;
+    private TextView status, mediaLabel, transformLabel;
+    private Button startBtn, restoreBtn;
+
+    private final AtomicBoolean playBusy = new AtomicBoolean(false);
+    private final AtomicBoolean transformBusy = new AtomicBoolean(false);
+    private volatile boolean transformPending = false;
+    private volatile String pendingReason = "pending";
 
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
@@ -51,14 +53,16 @@ public class MainActivity extends Activity {
         root = new RootBootstrap(this, logger);
         binder = new VliveBinderClient(logger);
         prefs = getSharedPreferences("app_config", MODE_PRIVATE);
+        prefs.edit()
+                .putString("ServerName", RootBootstrap.FIXED_SERVICE_NAME)
+                .putBoolean("EnableTx24Color", false)
+                .apply();
         tx = TransformState.load(prefs);
-        binder.setPreferredService(root.serverName());
+        binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
         requestBasicPermissions();
         buildUi();
-        logger.setListener(text -> runOnUiThread(() -> { if (logView != null) logView.setText(trimLog(text)); }));
-        logger.log("app", "IceCam v15 Core rebuild started");
-        logger.log("app", "ServerName=" + root.serverName());
-        runBg(() -> { root.bootstrap(); binder.setPreferredService(root.serverName()); refreshAll(); });
+        logger.log("app", "IceCam v16 stabilized Core started");
+        runBg(() -> { root.bootstrap(); binder.clearCache(); binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME); refreshAll(); });
     }
 
     private void requestBasicPermissions() {
@@ -77,7 +81,7 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
-        body.setPadding(dp(14), dp(14), dp(14), dp(20));
+        body.setPadding(dp(16), dp(16), dp(16), dp(22));
         body.setBackgroundColor(BG);
         scroll.addView(body);
         setContentView(scroll);
@@ -87,99 +91,80 @@ public class MainActivity extends Activity {
     private void render() {
         body.removeAllViews();
         body.addView(title("IceCam"));
-        body.addView(text("v15 Core rebuild. New IceCam shell built around the best recovered parts: stable native backend, media picker, restore watchdog, floating controller, TransformState, baked photo transforms, and TX24 isolated as color-correction debug.", 13, false, MUTED));
+        body.addView(text("Camera stream replacement controller", 13, false, MUTED));
 
         LinearLayout stateCard = card();
         stateCard.addView(section("Status"));
-        status = text("", 12, false, TEXT);
+        status = text("", 13, false, TEXT);
         status.setTextIsSelectable(true);
         stateCard.addView(status);
         LinearLayout sr = row();
-        sr.addView(primaryBtn("Start service", v -> startNativeService()), weight());
-        sr.addView(primaryBtn("Restore camera", v -> restoreCamera()), weight());
-        sr.addView(primaryBtn("Full status", v -> runBg(() -> { root.status(); logger.logBlock("binder", binder.diagnostics()); refreshAll(); })), weight());
+        startBtn = primaryBtn("Start replacement", v -> startReplacement(), GREEN);
+        restoreBtn = primaryBtn("Stop / restore camera", v -> restoreCamera(), RED);
+        sr.addView(startBtn, weight());
+        sr.addView(restoreBtn, weight());
         stateCard.addView(sr);
         body.addView(stateCard);
 
         LinearLayout media = card();
-        media.addView(section("Media source"));
+        media.addView(section("Media"));
         mediaLabel = text("", 12, false, TEXT);
         mediaLabel.setTextIsSelectable(true);
         media.addView(mediaLabel);
         LinearLayout mr = row();
-        mr.addView(primaryBtn("Select media", v -> pickMedia()), weight());
-        mr.addView(primaryBtn("Play selected", v -> playSelected()), weight());
-        mr.addView(primaryBtn("Restore camera", v -> restoreCamera()), weight());
-        mr.addView(primaryBtn("Restart service", v -> startNativeService()), weight());
+        mr.addView(primaryBtn("Select photo/video", v -> pickMedia(), PRIMARY), weight());
+        mr.addView(primaryBtn("Replay selected", v -> startReplacement(), PRIMARY), weight());
         media.addView(mr);
-        loop = check("Loop playback", prefs.getBoolean("PlayisLoop", true), (b, v) -> { prefs.edit().putBoolean("PlayisLoop", v).apply(); logger.log("ui", "loop=" + v); });
-        media.addView(loop);
         body.addView(media);
 
         LinearLayout controls = card();
-        controls.addView(section("Stream controls / transform layer"));
+        controls.addView(section("Image controls"));
         transformLabel = text("", 12, false, TEXT);
         transformLabel.setTextIsSelectable(true);
         controls.addView(transformLabel);
-        controls.addView(check("Enable TX24 color-correction debug", prefs.getBoolean("EnableTx24Color", false), (b, v) -> { prefs.edit().putBoolean("EnableTx24Color", v).apply(); logger.log("tx24", "EnableTx24Color=" + v); }));
-        controls.addView(text("TX24 changed colors in runtime tests, so it is no longer used for pan/zoom. Photo controls bake a transformed camera-compatible frame and replay it. Video controls are tracked in TransformState; full realtime video transform requires the next native renderer stage, not TX24.", 11, false, MUTED));
+        controls.addView(text("For photos IceCam creates a high-quality transformed frame and replays it. Rapid taps are automatically queued to protect the backend service. Video realtime transforms require the next renderer stage.", 11, false, MUTED));
+
         LinearLayout c1 = row();
-        c1.addView(primaryBtn("Zoom +", v -> { tx.zoom(1.25f); applyTransform("zoom+"); }), weight());
-        c1.addView(primaryBtn("Up", v -> { tx.move(0f, 0.10f); applyTransform("up"); }), weight());
-        c1.addView(primaryBtn("Zoom -", v -> { tx.zoom(1f / 1.25f); applyTransform("zoom-"); }), weight());
+        c1.addView(primaryBtn("Zoom +", v -> { tx.zoom(1.15f); applyTransform("zoom+"); }, PRIMARY), weight());
+        c1.addView(primaryBtn("Up", v -> { tx.move(0f, 0.06f); applyTransform("up"); }, PRIMARY), weight());
+        c1.addView(primaryBtn("Zoom -", v -> { tx.zoom(1f / 1.15f); applyTransform("zoom-"); }, PRIMARY), weight());
         controls.addView(c1);
+
         LinearLayout c2 = row();
-        c2.addView(primaryBtn("Left", v -> { tx.move(-0.10f, 0f); applyTransform("left"); }), weight());
-        c2.addView(primaryBtn("Center", v -> { tx.center(); applyTransform("center"); }), weight());
-        c2.addView(primaryBtn("Right", v -> { tx.move(0.10f, 0f); applyTransform("right"); }), weight());
+        c2.addView(primaryBtn("Left", v -> { tx.move(-0.06f, 0f); applyTransform("left"); }, PRIMARY), weight());
+        c2.addView(primaryBtn("Center", v -> { tx.center(); applyTransform("center"); }, PRIMARY), weight());
+        c2.addView(primaryBtn("Right", v -> { tx.move(0.06f, 0f); applyTransform("right"); }, PRIMARY), weight());
         controls.addView(c2);
+
         LinearLayout c3 = row();
-        c3.addView(primaryBtn("Fit/Fill", v -> { tx.toggleFitFill(); applyTransform("fit-fill"); }), weight());
-        c3.addView(primaryBtn("Down", v -> { tx.move(0f, -0.10f); applyTransform("down"); }), weight());
-        c3.addView(primaryBtn("Crop", v -> { tx.cycleCrop(); applyTransform("crop"); }), weight());
+        c3.addView(primaryBtn("Fit / Fill", v -> { tx.toggleFitFill(); applyTransform("fit-fill"); }, PRIMARY), weight());
+        c3.addView(primaryBtn("Down", v -> { tx.move(0f, -0.06f); applyTransform("down"); }, PRIMARY), weight());
+        c3.addView(primaryBtn("Crop", v -> { tx.cycleCrop(); applyTransform("crop"); }, PRIMARY), weight());
         controls.addView(c3);
+
         LinearLayout c4 = row();
-        c4.addView(primaryBtn("Rotate 90", v -> { tx.rotate90(); applyTransform("rotate"); }), weight());
-        c4.addView(primaryBtn("Mirror", v -> { tx.toggleMirrorH(); applyTransform("mirror"); }), weight());
-        c4.addView(primaryBtn("Reset", v -> { tx.reset(); applyTransform("reset"); }), weight());
+        c4.addView(primaryBtn("Rotate", v -> { tx.rotate90(); applyTransform("rotate"); }, PRIMARY), weight());
+        c4.addView(primaryBtn("Mirror", v -> { tx.toggleMirrorH(); applyTransform("mirror"); }, PRIMARY), weight());
+        c4.addView(primaryBtn("Reset", v -> { tx.reset(); applyTransform("reset"); }, PRIMARY), weight());
         controls.addView(c4);
-        mirror = check("Mirror H", tx.mirrorH(), (b, v) -> { if (tx.mirrorH() != v) { tx.toggleMirrorH(); applyTransform("mirror-checkbox"); } });
-        autoRotate = check("Auto rotate flag", tx.autoRotate(), (b, v) -> { if (tx.autoRotate() != v) { tx.toggleAutoRotate(); applyTransform("auto-rotate"); } });
-        controls.addView(mirror);
-        controls.addView(autoRotate);
         body.addView(controls);
 
-        LinearLayout floating = card();
-        floating.addView(section("Floating menu"));
-        floating.addView(text("Floating panel includes Play, Restore camera, status, and photo transform controls. Eye=Zoom+, Face=Zoom-, Mouth=Center, arrows=pan image. TX24 is color debug only.", 12, false, MUTED));
+        LinearLayout floatCard = card();
+        floatCard.addView(section("Floating switch"));
+        floatCard.addView(text("Floating overlay now contains only Start / Stop / Restore buttons to avoid accidental stream resets.", 12, false, MUTED));
         LinearLayout fr = row();
-        fr.addView(primaryBtn("Open floating controls", v -> startFloatPanel()), weight());
-        fr.addView(primaryBtn("Overlay permission", v -> openOverlaySettings()), weight());
-        floating.addView(fr);
-        body.addView(floating);
+        fr.addView(primaryBtn("Open floating switch", v -> startFloatPanel(), PRIMARY), weight());
+        fr.addView(primaryBtn("Overlay permission", v -> openOverlaySettings(), PRIMARY), weight());
+        floatCard.addView(fr);
+        body.addView(floatCard);
 
-        LinearLayout service = card();
-        service.addView(section("Service name / Binder"));
-        serviceName = edit(root.serverName(), "Fixed service name passed to /data/vcplax");
-        service.addView(serviceName);
-        LinearLayout br = row();
-        br.addView(primaryBtn("Save + connect", v -> { saveServiceName(); logger.logBlock("binder", binder.diagnostics()); refreshAll(); }), weight());
-        br.addView(primaryBtn("Reset to privsam_service", v -> { String s = root.resetServerName(); binder.setPreferredService(s); render(); }), weight());
-        service.addView(br);
-        body.addView(service);
-
-        LinearLayout logs = card();
-        logs.addView(section("Runtime log"));
-        LinearLayout lr = row();
-        lr.addView(primaryBtn("Refresh status", v -> runBg(() -> { root.status(); refreshAll(); })), weight());
-        lr.addView(primaryBtn("Share log", v -> shareLog()), weight());
-        logs.addView(lr);
-        logView = text(trimLog(logger.text()), 11, false, 0xffedf2ff);
-        logView.setTextIsSelectable(true);
-        logView.setPadding(dp(10), dp(10), dp(10), dp(10));
-        logView.setBackground(round(0xff111826, dp(16), 0x334d5d73));
-        logs.addView(logView);
-        body.addView(logs);
+        LinearLayout tools = card();
+        tools.addView(section("Tools"));
+        LinearLayout tr = row();
+        tr.addView(primaryBtn("Refresh status", v -> runBg(() -> { root.status(); refreshAll(); }), PRIMARY), weight());
+        tr.addView(primaryBtn("Export log", v -> shareLog(), PRIMARY), weight());
+        tools.addView(tr);
+        body.addView(tools);
         refreshAll();
     }
 
@@ -197,153 +182,146 @@ public class MainActivity extends Activity {
             Uri uri = data.getData();
             try { getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Throwable ignored) {}
             String path = MediaResolver.resolveToReadableFile(this, uri, logger);
-            prefs.edit().putString("OriginalPlayFileMp4", path).putString("PlayFileMp4", path).putInt("PlayFileType", 1).apply();
+            tx.reset();
+            tx.save(prefs);
+            prefs.edit()
+                    .putString("OriginalPlayFileMp4", path)
+                    .putString("PlayFileMp4", path)
+                    .putInt("PlayFileType", 1)
+                    .putString("IceCamState", "MEDIA_SELECTED")
+                    .apply();
             logger.log("media", "selected=" + path);
             refreshAll();
         }
     }
 
-    private void playSelected() {
+    private void startReplacement() {
         String p = prefs.getString("PlayFileMp4", "");
         if (p == null || p.length() == 0) { toast("Select media first"); return; }
+        if (!playBusy.compareAndSet(false, true)) { logger.log("ui", "start ignored: backend busy"); return; }
         runBg(() -> {
-            if (!binder.connected()) {
-                logger.log("ui", "service not connected before play; starting native service");
-                root.bootstrap();
-                binder.clearCache();
-                binder.setPreferredService(root.serverName());
+            try {
+                prefs.edit().putString("IceCamState", "STARTING").apply();
+                binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
+                if (!binder.connected()) {
+                    root.bootstrap();
+                    binder.clearCache();
+                    binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
+                    sleepMs(250);
+                }
+                legacyApplyMedia(p, "start");
+            } finally {
+                playBusy.set(false);
+                refreshAll();
             }
-            safeApplyMedia(p, "main");
         });
     }
 
-    private void startNativeService() {
-        runBg(() -> {
-            saveServiceName();
-            prefs.edit().putString("IceCamState", "STARTING").putBoolean("ReplacementActive", false).apply();
-            logger.log("ui", "start native service requested");
-            root.bootstrap();
-            binder.clearCache();
-            binder.setPreferredService(root.serverName());
-            boolean ok = binder.connected();
-            prefs.edit().putString("IceCamState", ok ? "SERVICE_READY" : "SERVICE_ERROR").putBoolean("ReplacementActive", false).apply();
-            logger.log("ui", "service start result connected=" + ok + " " + binder.lastError());
-            refreshAll();
-        });
-    }
-
-    private void safeApplyMedia(String p, String source) {
-        tx.save(prefs);
-        runBg(() -> {
-            prefs.edit().putString("ServerName", RootBootstrap.FIXED_SERVICE_NAME).apply();
-            binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
-            logger.log("ui", "legacy media apply start source=" + source + " path=" + p + " service=" + binder.preferredService());
-
-            // v12: restore the last known working sequence from v8/v9.
-            // Do NOT call TX25 here: it can close the native endpoint and leave clients black.
-            // Do NOT call TX22 by default: it may be a status/range command, not required for source apply.
-            // Do NOT call TX24 automatically: logs show TX24 returns 14 and does not behave as a reliable transform command.
-            int mode = binder.setModeString(1, p);
-            sleepMs(220);
-            int play = binder.playSource(p, tx.mirrorH(), prefs.getBoolean("PlayisLoop", true));
-            sleepMs(260);
-            int tr = -1000;
-            if (prefs.getBoolean("EnableTx24Color", false)) {
-                tr = binder.setTransform(tx);
-            } else {
-                logger.log("tx24", "auto TX24 skipped; EnableTx24Color=false " + tx.summary());
-            }
-            boolean active = mode >= 0 && play >= 0;
-            prefs.edit().putBoolean("ReplacementActive", active).putString("IceCamState", active ? "REPLACEMENT_ACTIVE" : "PLAY_ERROR").apply();
-            logger.log("ui", "legacy media apply done TX14=" + mode + " TX11=" + play + " TX24=" + tr + " active=" + active + " path=" + p);
-            refreshAll();
-        });
-    }
-
-    private void stopNative() { restoreCamera(); }
-
-    private void restoreCamera() {
-        runBg(() -> {
-            prefs.edit().putString("IceCamState", "RESTORING_CAMERA").apply();
-            logger.log("ui", "restore camera requested");
-            // Do not use TX25 for ordinary stop; logs showed it can leave black clients.
-            // Restore is process-level: kill vcplax and verify service disappears.
-            root.restoreCamera();
-            binder.clearCache();
-            boolean stillConnected = binder.connected();
-            prefs.edit()
-                    .putBoolean("ReplacementActive", false)
-                    .putString("IceCamState", stillConnected ? "RESTORE_CHECK_SERVICE_STILL_VISIBLE" : "CAMERA_RESTORED")
-                    .apply();
-            logger.log("ui", "restore camera done serviceStillVisible=" + stillConnected + " " + binder.lastError());
-            refreshAll();
-        });
+    private void legacyApplyMedia(String p, String source) {
+        logger.log("ui", "media apply start source=" + source + " path=" + p);
+        int mode = binder.setModeString(1, p);
+        sleepMs(240);
+        int play = binder.playSource(p, tx.mirrorH(), prefs.getBoolean("PlayisLoop", true));
+        boolean active = mode >= 0 && play >= 0;
+        prefs.edit().putBoolean("ReplacementActive", active).putString("IceCamState", active ? "REPLACEMENT_ACTIVE" : "PLAY_ERROR").apply();
+        logger.log("ui", "media apply done TX14=" + mode + " TX11=" + play + " active=" + active + " path=" + p);
     }
 
     private void applyTransform(String reason) {
         tx.save(prefs);
-        String current = prefs.getString("OriginalPlayFileMp4", prefs.getString("PlayFileMp4", ""));
-        if (current == null || current.length() == 0) {
-            logger.log("transform", reason + " saved only; no selected media " + tx.summary());
-            refreshAll();
+        refreshAll();
+        String original = prefs.getString("OriginalPlayFileMp4", prefs.getString("PlayFileMp4", ""));
+        if (original == null || original.length() == 0) return;
+        if (!MediaTransformer.isImagePath(original)) {
+            logger.log("transform", reason + " saved for video; realtime video transform not enabled yet. " + tx.summary());
             return;
         }
-        if (!MediaTransformer.isImagePath(current)) {
-            logger.log("transform", reason + " saved only for video/non-image; native TX24 is color debug, not pan/zoom. " + tx.summary());
-            refreshAll();
+        scheduleImageBake(reason);
+    }
+
+    private void scheduleImageBake(String reason) {
+        pendingReason = reason;
+        transformPending = true;
+        if (!transformBusy.compareAndSet(false, true)) {
+            logger.log("transform", "queued latest transform: " + reason);
             return;
         }
         runBg(() -> {
-            String baked = MediaTransformer.bakeImage(this, current, tx, logger);
-            prefs.edit().putString("PlayFileMp4", baked).putString("BakedPlayFileMp4", baked).apply();
-            logger.log("transform", reason + " baked/replay path=" + baked + " " + tx.summary());
-            safeApplyMedia(baked, "transform-" + reason);
+            try {
+                while (transformPending) {
+                    transformPending = false;
+                    String r = pendingReason;
+                    sleepMs(260); // debounce rapid taps
+                    TransformState snapshot = TransformState.load(prefs);
+                    String original = prefs.getString("OriginalPlayFileMp4", prefs.getString("PlayFileMp4", ""));
+                    if (original == null || original.length() == 0 || !MediaTransformer.isImagePath(original)) continue;
+                    prefs.edit().putString("IceCamState", "RENDERING_FRAME").apply();
+                    String baked = MediaTransformer.bakeImage(this, original, snapshot, logger);
+                    prefs.edit().putString("PlayFileMp4", baked).putString("BakedPlayFileMp4", baked).apply();
+                    logger.log("transform", r + " baked/replay " + snapshot.summary());
+                    legacyApplyMedia(baked, "transform-" + r);
+                    sleepMs(220);
+                }
+            } finally {
+                transformBusy.set(false);
+                refreshAll();
+                if (transformPending) scheduleImageBake("coalesced");
+            }
+        });
+    }
+
+    private void restoreCamera() {
+        if (!playBusy.compareAndSet(false, true)) { logger.log("ui", "restore ignored: backend busy"); return; }
+        runBg(() -> {
+            try {
+                prefs.edit().putString("IceCamState", "RESTORING_CAMERA").apply();
+                logger.log("ui", "restore camera requested");
+                root.restoreCamera();
+                binder.clearCache();
+                sleepMs(250);
+                boolean stillConnected = binder.connected();
+                prefs.edit().putBoolean("ReplacementActive", false).putString("IceCamState", stillConnected ? "RESTORE_CHECK_SERVICE_STILL_VISIBLE" : "CAMERA_RESTORED").apply();
+                logger.log("ui", "restore camera done serviceStillVisible=" + stillConnected + " " + binder.lastError());
+            } finally {
+                playBusy.set(false);
+                refreshAll();
+            }
         });
     }
 
     private void startFloatPanel() {
         if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
             openOverlaySettings();
-            toast("Allow Display over other apps, then open controls again");
+            toast("Allow Display over other apps, then open floating switch again");
             return;
         }
-        try {
-            startService(new Intent(this, FloatService.class));
-            logger.log("ui", "floating panel requested");
-        } catch (Throwable t) { logger.log("ui", "start float failed: " + t); }
+        try { startService(new Intent(this, FloatService.class)); logger.log("ui", "floating switch requested"); }
+        catch (Throwable t) { logger.log("ui", "start float failed: " + t); }
     }
 
     private void openOverlaySettings() {
         if (Build.VERSION.SDK_INT >= 23) startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())));
     }
 
-    private void saveServiceName() {
-        String s = RootBootstrap.FIXED_SERVICE_NAME;
-        prefs.edit().putString("ServerName", s).apply();
-        binder.setPreferredService(s);
-        logger.log("binder", "ServerName=" + s + " (fixed)");
-        if (serviceName != null) serviceName.setText(s);
-    }
-
     private void refreshAll() {
         runOnUiThread(() -> {
+            tx = TransformState.load(prefs);
+            boolean active = prefs.getBoolean("ReplacementActive", false);
+            String phase = prefs.getString("IceCamState", "IDLE");
+            boolean connected = binder.connected();
             if (status != null) {
-                boolean active = prefs.getBoolean("ReplacementActive", false);
-                String phase = prefs.getString("IceCamState", "IDLE");
-                boolean connected = binder.connected();
-                status.setText("state=" + phase + "\nreplacementActive=" + active + "\nserver=" + root.serverName() + "\nconnected=" + connected + "\n" + binder.lastError());
-                status.setTextColor(active ? 0xff62ff91 : (connected ? 0xffffcc66 : TEXT));
+                status.setText("State: " + phase + "\nReplacement: " + (active ? "ON" : "OFF") + "\nBackend: " + (connected ? "ready" : "not connected"));
+                status.setTextColor(active ? GREEN : (connected ? 0xffffcc66 : TEXT));
             }
             if (mediaLabel != null) {
                 String p = prefs.getString("PlayFileMp4", "");
-                mediaLabel.setText("selected=" + (p == null || p.length() == 0 ? "<none>" : p));
+                mediaLabel.setText(p == null || p.length() == 0 ? "No media selected" : shortPath(p));
             }
-            tx = TransformState.load(prefs);
-            if (transformLabel != null) transformLabel.setText(tx.summary());
-            if (logView != null) logView.setText(trimLog(logger.text()));
+            if (transformLabel != null) transformLabel.setText(tx.summary() + (transformBusy.get() ? "\nRendering queued frame…" : ""));
         });
     }
 
+    private String shortPath(String p) { return p.length() > 96 ? "…" + p.substring(p.length() - 96) : p; }
     private void runBg(Runnable r) { new Thread(() -> { try { r.run(); } catch (Throwable t) { logger.log("thread", String.valueOf(t)); } }, "icecam-bg").start(); }
     private static void sleepMs(long ms) { try { Thread.sleep(ms); } catch (InterruptedException ignored) {} }
 
@@ -352,22 +330,18 @@ public class MainActivity extends Activity {
             Intent i = new Intent(Intent.ACTION_SEND);
             i.setType("text/plain");
             i.putExtra(Intent.EXTRA_TEXT, logger.text());
-            startActivity(Intent.createChooser(i, "Share IceCam log"));
-        } catch (Throwable t) { toast("Share failed: " + t.getMessage()); }
+            startActivity(Intent.createChooser(i, "Export IceCam log"));
+        } catch (Throwable t) { toast("Export failed: " + t.getMessage()); }
     }
 
-    private String trimLog(String s) { return s == null ? "" : (s.length() > 16000 ? s.substring(0, 16000) : s); }
     private void toast(String s) { Toast.makeText(this, s, Toast.LENGTH_SHORT).show(); logger.log("toast", s); }
-
-    private TextView title(String s) { TextView t = text(s, 24, true, TEXT); t.setPadding(0, 0, 0, dp(8)); return t; }
-    private TextView section(String s) { TextView t = text(s, 13, true, TEXT); t.setPadding(0, 0, 0, dp(8)); return t; }
+    private TextView title(String s) { TextView t = text(s, 26, true, TEXT); t.setPadding(0, 0, 0, dp(4)); return t; }
+    private TextView section(String s) { TextView t = text(s, 14, true, TEXT); t.setPadding(0, 0, 0, dp(8)); return t; }
     private TextView text(String s, int sp, boolean bold, int color) { TextView t = new TextView(this); t.setText(s); t.setTextSize(sp); t.setTextColor(color); if (bold) t.setTypeface(Typeface.DEFAULT_BOLD); return t; }
-    private LinearLayout card() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); l.setPadding(dp(14), dp(12), dp(14), dp(12)); l.setBackground(round(CARD, dp(22), 0x334d5d73)); LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.setMargins(0, 0, 0, dp(12)); l.setLayoutParams(p); return l; }
+    private LinearLayout card() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); l.setPadding(dp(15), dp(13), dp(15), dp(13)); l.setBackground(round(CARD, dp(24), 0x334d5d73)); LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.setMargins(0, 0, 0, dp(13)); l.setLayoutParams(p); return l; }
     private LinearLayout row() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); l.setGravity(Gravity.CENTER); return l; }
-    private LinearLayout.LayoutParams weight() { LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, dp(46), 1); p.setMargins(dp(3), dp(3), dp(3), dp(3)); return p; }
-    private Button primaryBtn(String s, View.OnClickListener l) { Button b = new Button(this); b.setText(s); b.setAllCaps(false); b.setTextSize(11); b.setTextColor(Color.WHITE); b.setTypeface(Typeface.DEFAULT_BOLD); b.setBackground(round(PRIMARY, dp(16), 0x66ffffff)); b.setOnClickListener(l); b.setMinHeight(0); b.setMinimumHeight(0); return b; }
-    private CheckBox check(String s, boolean checked, CompoundButton.OnCheckedChangeListener l) { CheckBox c = new CheckBox(this); c.setText(s); c.setTextColor(TEXT); c.setTextSize(12); c.setChecked(checked); c.setOnCheckedChangeListener(l); return c; }
-    private EditText edit(String value, String hint) { EditText e = new EditText(this); e.setText(value); e.setHint(hint); e.setSingleLine(true); e.setTextColor(TEXT); e.setHintTextColor(MUTED); e.setBackground(round(CARD_2, dp(14), 0x334d5d73)); e.setPadding(dp(10), 0, dp(10), 0); return e; }
+    private LinearLayout.LayoutParams weight() { LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, dp(48), 1); p.setMargins(dp(4), dp(4), dp(4), dp(4)); return p; }
+    private Button primaryBtn(String s, View.OnClickListener l, int color) { Button b = new Button(this); b.setText(s); b.setAllCaps(false); b.setTextSize(11); b.setTextColor(Color.WHITE); b.setTypeface(Typeface.DEFAULT_BOLD); b.setBackground(round(color, dp(16), 0x55ffffff)); b.setOnClickListener(l); b.setMinHeight(0); b.setMinimumHeight(0); return b; }
     private GradientDrawable round(int color, int radius, int stroke) { GradientDrawable g = new GradientDrawable(); g.setColor(color); g.setCornerRadius(radius); g.setStroke(1, stroke); return g; }
     private int dp(int v) { return (int)(v * getResources().getDisplayMetrics().density + .5f); }
 }
