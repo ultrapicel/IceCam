@@ -21,7 +21,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 public class FloatService extends Service {
-    private static final boolean FLOAT_AUTO_COMMIT = false;
+    private static final boolean FLOAT_AUTO_COMMIT = true;
 
     private WindowManager wm;
     private View panel;
@@ -74,7 +74,7 @@ public class FloatService extends Service {
         panel = buildPanel();
         wm.addView(panel, lp);
         refresh();
-        log.log("float", "v22 command-bus floating controls started autoCommit=" + FLOAT_AUTO_COMMIT);
+        log.log("float", BuildInfo.VERSION_NAME + " floating controls started autoCommit=" + FLOAT_AUTO_COMMIT);
     }
 
     private View buildPanel() {
@@ -84,7 +84,7 @@ public class FloatService extends Service {
         box.setBackground(bg(0xee151b28, dp(26), 0x66ffffff));
         box.setOnTouchListener((v, e) -> drag(e));
 
-        TextView title = tv("IceCam Remote", 15, true);
+        TextView title = tv(BuildInfo.BUILD_LABEL + " Remote", 15, true);
         title.setGravity(Gravity.CENTER);
         title.setOnTouchListener((v, e) -> drag(e));
         box.addView(title, new LinearLayout.LayoutParams(-1, dp(30)));
@@ -95,8 +95,7 @@ public class FloatService extends Service {
         box.addView(state);
 
         LinearLayout r0 = row();
-        r0.addView(btn("Start", v -> { controller.startReplacement(TransformController.Source.FLOAT); refreshDelayed(); }), weight());
-        r0.addView(btn("Restore", v -> { controller.restoreCamera(TransformController.Source.FLOAT); refreshDelayed(); }), weight());
+        r0.addView(btn("START / RESTORE", v -> { startOrRestore(); refreshDelayed(); }), wideWeight());
         box.addView(r0);
 
         LinearLayout r1 = row();
@@ -118,8 +117,8 @@ public class FloatService extends Service {
         box.addView(r3);
 
         LinearLayout r4 = row();
-        r4.addView(btn("Rotate", v -> mutate("rotate")), weight());
-        r4.addView(btn("Mirror", v -> mutate("mirror")), weight());
+        r4.addView(btn("ROT +90", v -> mutate("rot+90")), weight());
+        r4.addView(btn("MIR X", v -> mutate("mirror-x")), weight());
         r4.addView(btn("Commit", v -> commit()), weight());
         box.addView(r4);
 
@@ -143,6 +142,12 @@ public class FloatService extends Service {
                 prefs.edit().putInt("FloatX", lp.x).putInt("FloatY", lp.y).apply(); return true;
         }
         return false;
+    }
+
+    private void startOrRestore() {
+        if (controller.isBusy()) { toast("Busy"); return; }
+        if (prefs.getBoolean("ReplacementActive", false)) controller.restoreCamera(TransformController.Source.FLOAT);
+        else controller.startReplacement(TransformController.Source.FLOAT);
     }
 
     private void mutate(String op) {
@@ -174,18 +179,19 @@ public class FloatService extends Service {
         boolean active = prefs.getBoolean("ReplacementActive", false);
         String phase = prefs.getString("IceCamState", "IDLE");
         TransformState s = TransformState.load(prefs);
-        state.setText((active ? "ON" : "OFF") + " · " + phase + "\n" + s.modeName() + " z=" + String.format(java.util.Locale.US, "%.2f", s.zoomX) + " pan=" + String.format(java.util.Locale.US, "%.2f,%.2f", s.panX, s.panY) + "\nFLOAT: state-only · Commit uses app controller");
+        state.setText((active ? "ACTIVE" : "OFF") + " · " + phase + "\n" + s.modeName() + " z=" + String.format(java.util.Locale.US, "%.2f", s.zoomX) + " rot=" + (s.rotationQuadrant() == 3 ? -90 : s.rotationQuadrant() * 90) + "°" + "\nFLOAT: unified controller · debounced apply");
         state.setTextColor(active ? 0xff62ff91 : 0xffdbe7f4);
     }
 
     private Button btn(String s, View.OnClickListener l) {
         Button b = new Button(this);
         b.setText(s); b.setAllCaps(false); b.setTextSize(10); b.setTextColor(Color.WHITE); b.setTypeface(Typeface.DEFAULT_BOLD);
-        b.setPadding(0, 0, 0, 0); b.setMinHeight(0); b.setMinimumHeight(0); b.setBackground(bg(0xaa6d7c92, dp(15), 0x66ffffff)); b.setOnClickListener(l); return b;
+        b.setPadding(0, 0, 0, 0); b.setMinHeight(0); b.setMinimumHeight(0); b.setBackground(UiKit.neonButton(0xff30384a, UiKit.CYAN, dp(15))); b.setOnClickListener(l); return b;
     }
     private TextView tv(String s, int sp, boolean bold) { TextView t = new TextView(this); t.setText(s); t.setTextSize(sp); t.setTextColor(Color.WHITE); if (bold) t.setTypeface(Typeface.DEFAULT_BOLD); return t; }
     private LinearLayout row() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); l.setGravity(Gravity.CENTER); return l; }
     private LinearLayout.LayoutParams weight() { LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(36), 1); lp.setMargins(dp(3), dp(3), dp(3), dp(3)); return lp; }
+    private LinearLayout.LayoutParams wideWeight() { LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(42)); lp.setMargins(dp(3), dp(3), dp(3), dp(5)); return lp; }
     private GradientDrawable bg(int color, int radius, int stroke) { GradientDrawable g = new GradientDrawable(); g.setColor(color); g.setCornerRadius(radius); g.setStroke(1, stroke); return g; }
     private int dp(int v) { return (int)(v * getResources().getDisplayMetrics().density + .5f); }
     private void toast(String s) { Toast.makeText(this, s, Toast.LENGTH_SHORT).show(); log.log("float", s); }

@@ -23,5 +23,5 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: IceCam-v19-stable-backend-queue-debug-apk
+          name: IceCam-v23-neon-control-panel-debug-apk
           path: app/build/outputs/apk/debug/*.apk

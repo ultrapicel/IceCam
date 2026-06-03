@@ -1,15 +1,18 @@
-# IceCam Core v22
+# IceCam Core v23
 
-Unified floating control-plane build.
+Ready-to-upload Android project for GitHub Actions.
 
-## v22 focus
+## v23 focus
 
-- Floating controls no longer call Binder/TX or bake/replay independently.
-- Added process-wide `TransformController`.
-- MainActivity and FloatService route transform commands through the same control path.
-- Floating controls are state-only by default; `Commit` uses the same controller path as the app button.
-- MainActivity transform buttons still auto-commit through the unified controller.
-- Legacy backend replay remains serialized by `BackendApplyQueue` using TX14 -> TX11 only.
-- Stable output canvas from v21 is preserved to avoid resolution flips during rotate.
+`v23-neon-control-panel` rebuilds the app-side control plane and UI around one source of truth:
 
-Build through GitHub Actions using `.github/workflows/android.yml`.
+- `BuildInfo` centralizes version labels for UI/logs/diagnostics.
+- `TransformController` is the only owner of transform commands from MainActivity and FloatService.
+- Main UI is preview-first: transforms update the preview immediately, then legacy backend apply is debounced.
+- Floating controls use the same controller path and no longer own Binder/TX/bake logic.
+- Start and Restore are merged into one state-aware button.
+- Status panel shows backend/replacement/transform/source state.
+- Media slots are displayed as thumbnail cards with `+` replace buttons.
+- Buttons use neon pressed/selected states for touch feedback.
+
+Legacy backend path remains `TX14 -> TX11`; `TX24` is still not used for geometry transform and `TX25` remains reserved for hard recovery only.

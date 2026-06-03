@@ -178,4 +178,50 @@ public final class MediaTransformer {
         }
     }
 
+
+    public static Bitmap renderPreview(Context ctx, String sourcePath, TransformState s, int maxW, int maxH) {
+        if (sourcePath == null || sourcePath.trim().isEmpty() || !isImagePath(sourcePath)) return null;
+        try {
+            BitmapFactory.Options probe = new BitmapFactory.Options();
+            probe.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(sourcePath, probe);
+            if (probe.outWidth <= 0 || probe.outHeight <= 0) return null;
+            int sample = 1;
+            while (Math.max(probe.outWidth / sample, probe.outHeight / sample) > 1400) sample *= 2;
+            BitmapFactory.Options opt = new BitmapFactory.Options();
+            opt.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            opt.inDither = true;
+            opt.inSampleSize = sample;
+            Bitmap src = BitmapFactory.decodeFile(sourcePath, opt);
+            if (src == null) return null;
+
+            int outW = Math.max(240, maxW > 0 ? maxW : 720);
+            int outH = Math.max(240, maxH > 0 ? maxH : 720);
+            Bitmap out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(out);
+            c.drawColor(Color.BLACK);
+
+            float sw = src.getWidth();
+            float sh = src.getHeight();
+            float base;
+            if (s.mode == TransformState.MODE_FILL) base = Math.max(outW / sw, outH / sh);
+            else if (s.mode == TransformState.MODE_STRETCH) base = 1f;
+            else base = Math.min(outW / sw, outH / sh);
+            Matrix m = new Matrix();
+            m.postTranslate(-sw / 2f, -sh / 2f);
+            if (s.mirrorH()) m.postScale(-1f, 1f);
+            if (s.mirrorV()) m.postScale(1f, -1f);
+            m.postRotate(s.rotationQuadrant() * 90f);
+            if (s.mode == TransformState.MODE_STRETCH) m.postScale((outW / sw) * s.zoomX, (outH / sh) * s.zoomY);
+            else m.postScale(base * s.zoomX, base * s.zoomY);
+            m.postTranslate(outW / 2f + s.panX * (outW / 2f), outH / 2f - s.panY * (outH / 2f));
+            Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+            c.drawBitmap(src, m, paint);
+            src.recycle();
+            return out;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
 }

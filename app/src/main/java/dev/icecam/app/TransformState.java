@@ -101,6 +101,7 @@ public final class TransformState {
     public void center() { panX = 0f; panY = 0f; }
     public void reset() { mode = MODE_FIT; panX = 0f; panY = 0f; zoomX = 1f; zoomY = 1f; flags = FLAG_LOCK_ASPECT; }
     public void rotate90() { int q = (rotationQuadrant() + 1) & 3; flags = (flags & ~FLAG_ROT_MASK) | (q << FLAG_ROT_SHIFT); }
+    public void rotateMinus90() { int q = (rotationQuadrant() + 3) & 3; flags = (flags & ~FLAG_ROT_MASK) | (q << FLAG_ROT_SHIFT); }
     public void toggleMirrorH() { flags ^= FLAG_MIRROR_H; }
     public void toggleMirrorV() { flags ^= FLAG_MIRROR_V; }
     public void toggleFitFill() { mode = (mode == MODE_FIT) ? MODE_FILL : MODE_FIT; }

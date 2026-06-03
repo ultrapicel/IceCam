@@ -7,15 +7,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Process-wide transform/control plane.
  *
- * v22 goal: MainActivity and FloatService must not own separate backend paths.
+ * v23 goal: MainActivity and FloatService must not own separate backend paths.
  * Floating controls are only a remote UI source; all transform commits and legacy
  * TX14/TX11 replay go through this controller and BackendApplyQueue.
  */
 public final class TransformController {
     public enum Source { MAIN, FLOAT }
 
-    private static final long MAIN_QUIET_TRANSFORM_MS = 850L;
-    private static final long FLOAT_QUIET_TRANSFORM_MS = 1400L;
+    private static final long MAIN_QUIET_TRANSFORM_MS = 650L;
+    private static final long FLOAT_QUIET_TRANSFORM_MS = 950L;
     private static final long POST_RENDER_COOLDOWN_MS = 500L;
     private static volatile TransformController instance;
 
@@ -71,8 +71,12 @@ public final class TransformController {
             case "center": s.center(); break;
             case "fit-fill": s.toggleFitFill(); break;
             case "crop": s.cycleCrop(); break;
-            case "rotate": s.rotate90(); break;
-            case "mirror": s.toggleMirrorH(); break;
+            case "rotate":
+            case "rot+90": s.rotate90(); break;
+            case "rot-90": s.rotateMinus90(); break;
+            case "mirror":
+            case "mirror-x": s.toggleMirrorH(); break;
+            case "mirror-y": s.toggleMirrorV(); break;
             case "reset": s.reset(); break;
             default: log.log("txctl", "unknown transform op source=" + source + " op=" + op); break;
         }
@@ -126,7 +130,14 @@ public final class TransformController {
                     binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME);
                     sleepMs(350);
                 }
-                BackendApplyQueue.get(context).enqueue(path, "txctl-start-" + source.name().toLowerCase(), true);
+                String original = originalPath();
+                TransformState snapshot = TransformState.load(prefs);
+                if (original.length() > 0 && MediaTransformer.isImagePath(original)) {
+                    log.log("txctl", "start will render current transform before TX source=" + source + " " + snapshot.summary());
+                    scheduleRender(source, "start-current-state", true);
+                } else {
+                    BackendApplyQueue.get(context).enqueue(path, "txctl-start-" + source.name().toLowerCase(), true);
+                }
             } catch (Throwable t) {
                 log.log("txctl", "start exception source=" + source + ": " + t);
             } finally {
@@ -175,7 +186,7 @@ public final class TransformController {
         pendingSource = source;
         pendingForce = pendingForce || force;
         pendingRender = true;
-        prefs.edit().putString("IceCamState", force ? "COMMIT_QUEUED" : "TRANSFORM_QUEUED").apply();
+        prefs.edit().putString("IceCamState", force ? "COMMIT_QUEUED" : "TRANSFORM_DIRTY").apply();
         if (!renderWorker.compareAndSet(false, true)) {
             log.log("txctl", "render coalesced source=" + source + " reason=" + reason + " force=" + force);
             return;

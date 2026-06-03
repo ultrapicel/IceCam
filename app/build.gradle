@@ -7,8 +7,8 @@ android {
         applicationId 'dev.icecam.app'
         minSdk 23
         targetSdk 35
-        versionCode 22
-        versionName '0.22-v22-unified-floating-control-plane'
+        versionCode 23
+        versionName '0.23-v23-neon-control-panel'
     }
     buildTypes {
         debug { debuggable true; minifyEnabled false }

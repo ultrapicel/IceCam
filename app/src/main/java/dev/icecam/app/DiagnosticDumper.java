@@ -18,6 +18,7 @@ public final class DiagnosticDumper {
         sb.append("===== ICECAM DIAGNOSTIC SNAPSHOT =====\n");
         sb.append("time=").append(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(new Date())).append('\n');
         sb.append("package=").append(ctx.getPackageName()).append('\n');
+        sb.append("icecamBuild=").append(BuildInfo.BUILD_LABEL).append(' ').append(BuildInfo.VERSION_NAME).append(" code=").append(BuildInfo.VERSION_CODE).append('\n');
         sb.append("build=SDK ").append(Build.VERSION.SDK_INT).append(" device=").append(Build.MANUFACTURER).append(' ').append(Build.MODEL).append(" abi=");
         if (Build.SUPPORTED_ABIS != null) for (String a : Build.SUPPORTED_ABIS) sb.append(a).append(' ');
         sb.append("\n");

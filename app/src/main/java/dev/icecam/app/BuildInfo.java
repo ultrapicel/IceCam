@@ -1,0 +1,9 @@
+package dev.icecam.app;
+
+public final class BuildInfo {
+    private BuildInfo() {}
+    public static final int VERSION_CODE = 23;
+    public static final String VERSION_NAME = "0.23-v23-neon-control-panel";
+    public static final String BUILD_LABEL = "IceCam Core v23";
+    public static final String BUILD_FLAVOR = "neon-control-panel";
+}
