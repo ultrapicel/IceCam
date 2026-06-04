@@ -16,3 +16,11 @@ Ready-to-upload Android project for GitHub Actions.
 - Buttons use neon pressed/selected states for touch feedback.
 
 Legacy backend path remains `TX14 -> TX11`; `TX24` is still not used for geometry transform and `TX25` remains reserved for hard recovery only.
+
+
+## v24 compact-stable-ui
+- Compact controls (~1/3 shorter buttons).
+- Advanced panel toggles instead of duplicating.
+- Main/floating transform buttons are preview-first; PLAY / COMMIT applies to legacy backend.
+- Cached thumbnails and lower-cost preview rendering reduce UI stalls.
+- Version bumped to 0.24-v24-compact-stable-ui.

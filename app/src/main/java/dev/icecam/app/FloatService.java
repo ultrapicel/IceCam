@@ -21,7 +21,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 public class FloatService extends Service {
-    private static final boolean FLOAT_AUTO_COMMIT = true;
+    private static final boolean FLOAT_AUTO_COMMIT = false;
 
     private WindowManager wm;
     private View panel;
@@ -65,7 +65,7 @@ public class FloatService extends Service {
         if (panel != null) return;
         wm = (WindowManager)getSystemService(WINDOW_SERVICE);
         int type = Build.VERSION.SDK_INT >= 26 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
-        lp = new WindowManager.LayoutParams(dp(292), WindowManager.LayoutParams.WRAP_CONTENT, type,
+        lp = new WindowManager.LayoutParams(dp(264), WindowManager.LayoutParams.WRAP_CONTENT, type,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.START;
@@ -74,6 +74,7 @@ public class FloatService extends Service {
         panel = buildPanel();
         wm.addView(panel, lp);
         refresh();
+        controller.bus().store().addListener(appState -> refresh());
         log.log("float", BuildInfo.VERSION_NAME + " floating controls started autoCommit=" + FLOAT_AUTO_COMMIT);
     }
 
@@ -179,19 +180,19 @@ public class FloatService extends Service {
         boolean active = prefs.getBoolean("ReplacementActive", false);
         String phase = prefs.getString("IceCamState", "IDLE");
         TransformState s = TransformState.load(prefs);
-        state.setText((active ? "ACTIVE" : "OFF") + " · " + phase + "\n" + s.modeName() + " z=" + String.format(java.util.Locale.US, "%.2f", s.zoomX) + " rot=" + (s.rotationQuadrant() == 3 ? -90 : s.rotationQuadrant() * 90) + "°" + "\nFLOAT: unified controller · debounced apply");
+        state.setText((active ? "ACTIVE" : "OFF") + " · " + phase + " · #" + prefs.getLong("LastMarkerId", 0L) + "\n" + s.modeName() + " z=" + String.format(java.util.Locale.US, "%.2f", s.zoomX) + " rot=" + (s.rotationQuadrant() == 3 ? -90 : s.rotationQuadrant() * 90) + "°" + "\nFLOAT: Runtime CommandBus · no preview bake");
         state.setTextColor(active ? 0xff62ff91 : 0xffdbe7f4);
     }
 
     private Button btn(String s, View.OnClickListener l) {
         Button b = new Button(this);
-        b.setText(s); b.setAllCaps(false); b.setTextSize(10); b.setTextColor(Color.WHITE); b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setText(s); b.setAllCaps(false); b.setTextSize(9); b.setTextColor(Color.WHITE); b.setTypeface(Typeface.DEFAULT_BOLD);
         b.setPadding(0, 0, 0, 0); b.setMinHeight(0); b.setMinimumHeight(0); b.setBackground(UiKit.neonButton(0xff30384a, UiKit.CYAN, dp(15))); b.setOnClickListener(l); return b;
     }
     private TextView tv(String s, int sp, boolean bold) { TextView t = new TextView(this); t.setText(s); t.setTextSize(sp); t.setTextColor(Color.WHITE); if (bold) t.setTypeface(Typeface.DEFAULT_BOLD); return t; }
     private LinearLayout row() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); l.setGravity(Gravity.CENTER); return l; }
-    private LinearLayout.LayoutParams weight() { LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(36), 1); lp.setMargins(dp(3), dp(3), dp(3), dp(3)); return lp; }
-    private LinearLayout.LayoutParams wideWeight() { LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(42)); lp.setMargins(dp(3), dp(3), dp(3), dp(5)); return lp; }
+    private LinearLayout.LayoutParams weight() { LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(32), 1); lp.setMargins(dp(3), dp(3), dp(3), dp(3)); return lp; }
+    private LinearLayout.LayoutParams wideWeight() { LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(38)); lp.setMargins(dp(3), dp(3), dp(3), dp(5)); return lp; }
     private GradientDrawable bg(int color, int radius, int stroke) { GradientDrawable g = new GradientDrawable(); g.setColor(color); g.setCornerRadius(radius); g.setStroke(1, stroke); return g; }
     private int dp(int v) { return (int)(v * getResources().getDisplayMetrics().density + .5f); }
     private void toast(String s) { Toast.makeText(this, s, Toast.LENGTH_SHORT).show(); log.log("float", s); }

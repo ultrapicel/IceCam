@@ -22,11 +22,12 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
     private static final int REQ_PICK = 7101;
-    private static final boolean MAIN_AUTO_COMMIT = true;
+    private static final boolean MAIN_AUTO_COMMIT = false;
 
     private AppLogger logger;
     private RootBootstrap root;
@@ -36,11 +37,14 @@ public class MainActivity extends Activity {
     private TransformState tx;
 
     private LinearLayout body;
-    private ImageView preview;
+    private RealtimePreviewView preview;
     private TextView statusScreen, rotationLabel, mediaLabel, versionLabel;
     private Button startRestoreButton, loopButton, fillButton;
     private LinearLayout slotsRow;
+    private LinearLayout advancedPanel;
     private int pendingPickSlot = 1;
+    private final HashMap<String, Bitmap> thumbCache = new HashMap<>();
+    private String lastPreviewKey = "";
 
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
@@ -59,6 +63,7 @@ public class MainActivity extends Activity {
         requestBasicPermissions();
         buildUi();
         logger.log("app", BuildInfo.BUILD_LABEL + " " + BuildInfo.VERSION_NAME + " started mainAutoCommit=" + MAIN_AUTO_COMMIT);
+        controller.bus().store().addListener(state -> refreshAll());
         runBg(() -> { root.bootstrap(); binder.clearCache(); binder.setPreferredService(RootBootstrap.FIXED_SERVICE_NAME); refreshAll(); });
     }
 
@@ -78,35 +83,33 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
-        body.setPadding(dp(14), dp(10), dp(14), dp(22));
+        body.setPadding(dp(10), dp(8), dp(10), dp(16));
         body.setBackgroundColor(UiKit.BG);
         scroll.addView(body);
         setContentView(scroll);
 
         versionLabel = text(BuildInfo.BUILD_LABEL + " · " + BuildInfo.BUILD_FLAVOR, 12, true, UiKit.MUTED);
         versionLabel.setGravity(Gravity.CENTER);
-        body.addView(versionLabel, new LinearLayout.LayoutParams(-1, dp(24)));
+        body.addView(versionLabel, new LinearLayout.LayoutParams(-1, dp(22)));
 
         FrameLayout previewShell = new FrameLayout(this);
         previewShell.setBackground(UiKit.fill(0xff05070b, dp(10), 0x66303a4f));
-        preview = new ImageView(this);
-        preview.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        preview.setBackgroundColor(Color.BLACK);
+        preview = new RealtimePreviewView(this);
         previewShell.addView(preview, new FrameLayout.LayoutParams(-1, -1));
         statusScreen = text("", 11, true, 0xffdffaff);
         statusScreen.setPadding(dp(10), dp(7), dp(10), dp(7));
         statusScreen.setBackgroundColor(0xaa000000);
         FrameLayout.LayoutParams sp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
         previewShell.addView(statusScreen, sp);
-        body.addView(previewShell, new LinearLayout.LayoutParams(-1, dp(330)));
+        body.addView(previewShell, new LinearLayout.LayoutParams(-1, dp(245)));
 
         rotationLabel = text("", 18, false, UiKit.MUTED);
-        rotationLabel.setPadding(0, dp(12), 0, dp(8));
+        rotationLabel.setPadding(0, dp(8), 0, dp(4));
         body.addView(rotationLabel);
 
         slotsRow = new LinearLayout(this);
         slotsRow.setOrientation(LinearLayout.HORIZONTAL);
-        body.addView(slotsRow, new LinearLayout.LayoutParams(-1, dp(120)));
+        body.addView(slotsRow, new LinearLayout.LayoutParams(-1, dp(92)));
 
         LinearLayout row1 = row();
         fillButton = bigButton("FILL", v -> mutate("fit-fill"), UiKit.CYAN_DARK);
@@ -137,7 +140,7 @@ public class MainActivity extends Activity {
         row4.addView(bigButton("CENTER", v -> mutate("center"), UiKit.PANEL_3), weight(1.15f));
         body.addView(row4);
 
-        body.addView(bigButton("▶  PLAY / COMMIT", v -> controller.commit(TransformController.Source.MAIN, "play-commit"), UiKit.PANEL_3), fullBtn());
+        body.addView(bigButton("▶  PLAY / COMMIT", v -> { controller.commit(TransformController.Source.MAIN, "play-commit"); refreshAll(); }, UiKit.PANEL_3), fullBtn());
 
         mediaLabel = text("", 12, false, UiKit.MUTED);
         mediaLabel.setGravity(Gravity.CENTER);
@@ -169,21 +172,21 @@ public class MainActivity extends Activity {
 
             ImageView thumb = new ImageView(this);
             thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            Bitmap bm = makeThumbnail(p, dp(96), dp(62));
+            Bitmap bm = makeThumbnail(p, dp(72), dp(44));
             if (bm != null) thumb.setImageBitmap(bm);
             else thumb.setBackgroundColor(0xff090d15);
             cell.addView(thumb, new LinearLayout.LayoutParams(-1, 0, 1));
 
-            TextView label = text("M" + i + (p == null || p.length() == 0 ? "\nTAP +" : ""), 13, true, UiKit.TEXT);
+            TextView label = text("M" + i + (p == null || p.length() == 0 ? " +" : ""), 12, true, UiKit.TEXT);
             label.setGravity(Gravity.CENTER);
-            cell.addView(label, new LinearLayout.LayoutParams(-1, dp(38)));
+            cell.addView(label, new LinearLayout.LayoutParams(-1, dp(28)));
             frame.addView(cell, new FrameLayout.LayoutParams(-1, -1));
 
             TextView plus = text("+", 22, true, Color.WHITE);
             plus.setGravity(Gravity.CENTER);
             plus.setBackground(UiKit.neonButton(UiKit.CYAN_DARK, UiKit.CYAN, dp(23)));
             plus.setOnClickListener(v -> pickIntoSlot(slot));
-            FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(dp(46), dp(46), Gravity.TOP | Gravity.RIGHT);
+            FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(dp(36), dp(36), Gravity.TOP | Gravity.RIGHT);
             pp.setMargins(0, dp(5), dp(5), 0);
             frame.addView(plus, pp);
 
@@ -196,8 +199,13 @@ public class MainActivity extends Activity {
     private Bitmap makeThumbnail(String p, int w, int h) {
         try {
             if (p == null || p.length() == 0) return null;
-            if (MediaTransformer.isImagePath(p)) return MediaTransformer.renderPreview(this, p, TransformState.load(prefs), w, h);
-            return null;
+            String key = p + "@" + w + "x" + h;
+            Bitmap cached = thumbCache.get(key);
+            if (cached != null && !cached.isRecycled()) return cached;
+            Bitmap bm = null;
+            if (MediaTransformer.isImagePath(p)) bm = MediaTransformer.renderPreview(this, p, new TransformState(), w, h);
+            if (bm != null) thumbCache.put(key, bm);
+            return bm;
         } catch (Throwable ignored) { return null; }
     }
 
@@ -216,13 +224,9 @@ public class MainActivity extends Activity {
     private void selectSlot(int slot) {
         String path = prefs.getString(slotKey(slot), "");
         if (path == null || path.length() == 0) { pickIntoSlot(slot); return; }
-        prefs.edit()
-                .putInt("ActiveSlot", slot)
-                .putString("OriginalPlayFileMp4", path)
-                .putString("PlayFileMp4", path)
-                .putString("IceCamState", "MEDIA_SELECTED")
-                .apply();
+        controller.selectMedia(TransformController.Source.MAIN, slot, path);
         logger.log("media", "active slot M" + slot + " path=" + path);
+        lastPreviewKey = "";
         refreshAll();
         if (prefs.getBoolean("ReplacementActive", false)) controller.startReplacement(TransformController.Source.MAIN);
     }
@@ -234,17 +238,11 @@ public class MainActivity extends Activity {
             try { getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION); } catch (Throwable ignored) {}
             String path = MediaResolver.resolveToReadableFile(this, uri, logger);
             int slot = Math.max(1, Math.min(4, pendingPickSlot));
-            TransformState fresh = new TransformState();
-            fresh.save(prefs);
-            prefs.edit()
-                    .putInt("ActiveSlot", slot)
-                    .putString(slotKey(slot), path)
-                    .putString("OriginalPlayFileMp4", path)
-                    .putString("PlayFileMp4", path)
-                    .putInt("PlayFileType", MediaTransformer.isVideoPath(path) ? 2 : 1)
-                    .putString("IceCamState", "MEDIA_SELECTED")
-                    .apply();
+            prefs.edit().putString(slotKey(slot), path).putInt("PlayFileType", MediaTransformer.isVideoPath(path) ? 2 : 1).apply();
+            controller.selectMedia(TransformController.Source.MAIN, slot, path);
             logger.log("media", "selected slot M" + slot + " path=" + path);
+            lastPreviewKey = "";
+            thumbCache.clear();
             refreshAll();
             if (prefs.getBoolean("ReplacementActive", false)) controller.startReplacement(TransformController.Source.MAIN);
         }
@@ -257,7 +255,7 @@ public class MainActivity extends Activity {
 
     private void toggleLoop() {
         boolean n = !prefs.getBoolean("PlayisLoop", true);
-        prefs.edit().putBoolean("PlayisLoop", n).apply();
+        controller.setLoop(TransformController.Source.MAIN, n);
         logger.log("ui", "loop=" + n);
         refreshAll();
     }
@@ -270,17 +268,23 @@ public class MainActivity extends Activity {
     }
 
     private void showAdvanced() {
-        LinearLayout adv = new LinearLayout(this);
-        adv.setOrientation(LinearLayout.VERTICAL);
-        adv.setPadding(dp(10), dp(8), dp(10), dp(8));
-        adv.setBackground(UiKit.fill(0xff111827, dp(20), 0x557987a0));
-        adv.addView(text("Advanced", 13, true, UiKit.TEXT));
+        if (advancedPanel != null) {
+            advancedPanel.setVisibility(advancedPanel.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+            return;
+        }
+        advancedPanel = new LinearLayout(this);
+        advancedPanel.setOrientation(LinearLayout.VERTICAL);
+        advancedPanel.setPadding(dp(8), dp(7), dp(8), dp(7));
+        advancedPanel.setBackground(UiKit.fill(0xff111827, dp(18), 0x557987a0));
+        advancedPanel.addView(text("Advanced", 12, true, UiKit.TEXT));
         LinearLayout r = row();
         r.addView(bigButton("FLOAT", v -> startFloatPanel(), UiKit.PANEL_3), weight());
         r.addView(bigButton("LOG", v -> shareLog(), UiKit.PANEL_3), weight());
         r.addView(bigButton("OVERLAY", v -> openOverlaySettings(), UiKit.PANEL_3), weight());
-        adv.addView(r);
-        body.addView(adv, Math.max(0, body.indexOfChild(mediaLabel)), new LinearLayout.LayoutParams(-1, -2));
+        advancedPanel.addView(r);
+        int index = body.indexOfChild(mediaLabel);
+        if (index < 0) index = body.getChildCount();
+        body.addView(advancedPanel, index, new LinearLayout.LayoutParams(-1, -2));
     }
 
     private void startFloatPanel() {
@@ -302,17 +306,22 @@ public class MainActivity extends Activity {
             tx = TransformState.load(prefs);
             boolean active = prefs.getBoolean("ReplacementActive", false);
             String phase = prefs.getString("IceCamState", "IDLE");
-            boolean connected = binder.connected();
+            boolean connected = active || phase.contains("READY") || phase.contains("ACTIVE");
             boolean busy = controller.isBusy();
 
             String p = prefs.getString("OriginalPlayFileMp4", prefs.getString("PlayFileMp4", ""));
-            Bitmap bm = MediaTransformer.renderPreview(this, p, tx, dp(720), dp(330));
-            if (bm != null) preview.setImageBitmap(bm);
-            else preview.setImageDrawable(null);
+            String previewKey = p;
+            if (!previewKey.equals(lastPreviewKey)) {
+                lastPreviewKey = previewKey;
+                preview.setMediaPath(p);
+            }
+            preview.setTransformState(tx);
 
+            String backend = connected ? "READY" : (active ? "RUNNING / IPC?" : "OFF");
+            String transform = phase;
             statusScreen.setText(String.format(Locale.US,
                     "Backend: %s  ·  Replacement: %s  ·  Transform: %s\nSource: M%d  ·  %s  ·  %s",
-                    connected ? "READY" : "OFF", active ? "ACTIVE" : "OFF", busy ? "BUSY" : phase,
+                    backend, active ? "ACTIVE" : "OFF", transform,
                     activeSlot(), tx.modeName(), tx.summary()));
             statusScreen.setTextColor(active ? 0xffa7ffd2 : (connected ? UiKit.WARN : 0xffffb0b0));
             rotationLabel.setText("Rotation: " + rotationLabelValue() + "°");
@@ -323,7 +332,7 @@ public class MainActivity extends Activity {
             startRestoreButton.setEnabled(!busy);
             startRestoreButton.setSelected(active);
             String play = prefs.getString("PlayFileMp4", "");
-            mediaLabel.setText((play == null || play.length() == 0 ? "No active media" : shortName(play)) + "   ·   " + BuildInfo.VERSION_NAME);
+            mediaLabel.setText((play == null || play.length() == 0 ? "No active media" : shortName(play)) + "   ·   realtime preview, press PLAY/COMMIT to apply   ·   " + BuildInfo.VERSION_NAME + " · marker #" + prefs.getLong("LastMarkerId", 0L));
             renderSlots();
         });
     }
@@ -359,8 +368,8 @@ public class MainActivity extends Activity {
     private TextView text(String s, int sp, boolean bold, int color) { TextView t = new TextView(this); t.setText(s); t.setTextSize(sp); t.setTextColor(color); if (bold) t.setTypeface(Typeface.DEFAULT_BOLD); return t; }
     private LinearLayout row() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); l.setGravity(Gravity.CENTER); return l; }
     private LinearLayout.LayoutParams weight() { return weight(1f); }
-    private LinearLayout.LayoutParams weight(float w) { LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, dp(74), w); p.setMargins(dp(5), dp(5), dp(5), dp(5)); return p; }
-    private LinearLayout.LayoutParams fullBtn() { LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, dp(76)); p.setMargins(dp(5), dp(10), dp(5), dp(5)); return p; }
-    private Button bigButton(String s, View.OnClickListener l, int color) { Button b = new Button(this); b.setText(s); b.setAllCaps(false); b.setTextSize(14); b.setTextColor(Color.WHITE); b.setTypeface(Typeface.DEFAULT); b.setPadding(0, 0, 0, 0); b.setMinHeight(0); b.setMinimumHeight(0); b.setBackground(UiKit.neonButton(color, UiKit.CYAN, dp(18))); b.setOnClickListener(l); return b; }
+    private LinearLayout.LayoutParams weight(float w) { LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, dp(50), w); p.setMargins(dp(4), dp(4), dp(4), dp(4)); return p; }
+    private LinearLayout.LayoutParams fullBtn() { LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, dp(56)); p.setMargins(dp(4), dp(7), dp(4), dp(4)); return p; }
+    private Button bigButton(String s, View.OnClickListener l, int color) { Button b = new Button(this); b.setText(s); b.setAllCaps(false); b.setTextSize(12); b.setTextColor(Color.WHITE); b.setTypeface(Typeface.DEFAULT); b.setPadding(0, 0, 0, 0); b.setMinHeight(0); b.setMinimumHeight(0); b.setBackground(UiKit.neonButton(color, UiKit.CYAN, dp(14))); b.setOnClickListener(l); return b; }
     private int dp(int v) { return (int)(v * getResources().getDisplayMetrics().density + .5f); }
 }
