@@ -1,26 +1,46 @@
-# IceCam Core v23
+# IceCam Core v2.0 - Modern Camera Replacement
 
-Ready-to-upload Android project for GitHub Actions.
+Modernized version of IceCam with updated native layer using **ShadowHook v2.0.0** and better compatibility with Android 14/15/16.
 
-## v23 focus
+## Features (Planned / In Progress)
 
-`v23-neon-control-panel` rebuilds the app-side control plane and UI around one source of truth:
+- Updated hooking using ShadowHook v2.0.0
+- Support for AHardwareBuffer (modern path) + fallback to GraphicBuffer
+- On-the-fly source switching (M1-M4)
+- File-based logging (easy to share)
+- Clean architecture ready for GPU transformations
 
-- `BuildInfo` centralizes version labels for UI/logs/diagnostics.
-- `TransformController` is the only owner of transform commands from MainActivity and FloatService.
-- Main UI is preview-first: transforms update the preview immediately, then legacy backend apply is debounced.
-- Floating controls use the same controller path and no longer own Binder/TX/bake logic.
-- Start and Restore are merged into one state-aware button.
-- Status panel shows backend/replacement/transform/source state.
-- Media slots are displayed as thumbnail cards with `+` replace buttons.
-- Buttons use neon pressed/selected states for touch feedback.
+## Project Structure
 
-Legacy backend path remains `TX14 -> TX11`; `TX24` is still not used for geometry transform and `TX25` remains reserved for hard recovery only.
+- `icecam_native_v2/` — New native layer (CMake + ShadowHook v2.0.0)
+- `app/` — Java/Kotlin application layer
+- `.github/workflows/build.yml` — Ready-to-use GitHub Actions
 
+## How to Build
 
-## v24 compact-stable-ui
-- Compact controls (~1/3 shorter buttons).
-- Advanced panel toggles instead of duplicating.
-- Main/floating transform buttons are preview-first; PLAY / COMMIT applies to legacy backend.
-- Cached thumbnails and lower-cost preview rendering reduce UI stalls.
-- Version bumped to 0.24-v24-compact-stable-ui.
+### Local Build
+
+```bash
+./gradlew assembleDebug
+```
+
+### GitHub Actions
+
+Push to `main` or `master` branch — the workflow will automatically build Debug and Release APKs.
+
+## Logging
+
+The app writes detailed logs to a file inside internal storage.
+You can share the log file directly from the app for analysis.
+
+## Next Steps
+
+This is the foundation. The following will be added in iterations:
+- Full implementation of frame capture hooks
+- GPU transformation engine
+- Improved realtime preview
+- Stable on-the-fly source switching
+
+## Credits
+
+Based on the original working implementation + modernized with ShadowHook v2.0.0.
